@@ -135,7 +135,12 @@
   .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
   .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
   .sx-btn:hover{background:#1d2947}
-  .sx-colmenu{position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+  .sx-colmenu{
+    position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
+    padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
+    /* scrollbar pour les colonnes */
+    max-height:70vh; overflow-y:auto;
+  }
   .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
   .sx-table{width:100%;border-collapse:separate;border-spacing:0}
@@ -147,22 +152,6 @@
   .sx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
   .sx-actions a:hover{background:#202a52}
   .sx-actions img{width:18px;height:18px}
-  .sx-colmenu{
-  position:fixed;
-  background:#151c2f;
-  border:1px solid #3a4a7a;
-  border-radius:10px;
-  padding:10px;
-  display:none;
-  flex-direction:column;
-  gap:6px;
-  z-index:2147483647;
-  box-shadow:0 12px 30px rgba(0,0,0,.5);
-
-  /* ajout pour scrollbar */
-  max-height: 50vh;   /* ou 60vh, ajuste selon confort */
-  overflow-y: auto;
-}
   `;
     const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
 
@@ -280,13 +269,17 @@
             colMenuEl.appendChild(lbl);
         });
         const r = btnCols.getBoundingClientRect();
-        const top = r.bottom + 8;
+        let top = r.bottom + 8;
         let left = r.left;
-        const maxLeft = window.innerWidth - 260;
-        if (left > maxLeft) left = maxLeft;
+        colMenuEl.style.display = 'flex';
+        // bornage du menu dans le viewport (après affichage pour avoir sa taille)
+        const mr = colMenuEl.getBoundingClientRect();
+        if (left + mr.width > window.innerWidth - 8) left = window.innerWidth - mr.width - 8;
+        if (top + mr.height > window.innerHeight - 8) top = window.innerHeight - mr.height - 8;
+        if (left < 8) left = 8;
+        if (top < 8) top = 8;
         colMenuEl.style.left = left+'px';
         colMenuEl.style.top = top+'px';
-        colMenuEl.style.display = 'flex';
     };
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
@@ -462,15 +455,8 @@
     }
 
     // ---- mount ----
-    const frag = document.createDocumentFragment();
-    const bodyWrap = document.createElement('div');
-    bodyWrap.appendChild(widgetsEl);
-    bodyWrap.appendChild(controlsEl);
-    bodyWrap.appendChild(tableEl);
-    frag.appendChild(headEl);
-    frag.appendChild(bodyWrap);
-    winEl.appendChild(frag);
-    winEl.classList.add('sx-win');
+    bodyEl.append(widgetsEl, controlsEl, tableEl);   // <— .sx-body porte l’overflow:auto
+    winEl.append(headEl, bodyEl);
     document.body.appendChild(winEl);
 
     // ---------- Bornage fenêtre (anti-dépassement) ----------
