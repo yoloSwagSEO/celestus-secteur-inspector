@@ -1,0 +1,18 @@
+{
+  "name": "Celestus Tools - Secteurs Inspector",
+  "description": "Injecte le panneau Secteurs Inspector dans la frame Interface de Celestus.",
+  "version": "1.0.0",
+  "manifest_version": 3,
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Celestus Tools"
+  },
+
+  "permissions": ["scripting", "tabs", "webNavigation", "activeTab"],
+
+  "host_permissions": [
+    "https://horizon.celestus.fr/*",
+    "http://horizon.celestus.fr/*"
+  ]
+}
