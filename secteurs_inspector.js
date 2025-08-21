@@ -25,7 +25,12 @@
         const s = abbr(v);
         if (!s) return '';
         if (key === 'ProdM' || key === 'ProdT') return `${s}/h`;
-        if (['ProdP','EntretienM','EntretienT','RentaM','RentaT','EntM1M','EntM1T','EntM4M','EntM4T'].includes(key)) return `${s}/j`;
+        if ([
+            'ProdP','EntretienM','EntretienT','RentaM','RentaT',
+            'EntM1M','EntM1T','EntM4M','EntM4T',
+            // nouveaux détails d’entretien :
+            'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
+        ].includes(key)) return `${s}/j`;
         return s;
     };
     const icon = {
@@ -48,16 +53,40 @@
         const ResM  = toNum(o.ResM);
         const ResT  = toNum(o.ResT);
         const ResP  = toNum(o.ResP);
-        const M1    = toNum(o.M1);
-        const M4    = toNum(o.M4);
 
-        // coûts d’entretien (/j)
-        const EntM1M = (M1||0)*10000; // module minier -> metal
-        const EntM1T = (M1||0)*5000;  // module minier -> trinium
-        const EntM4M = (M4||0)*20000; // concentrateur -> metal
-        const EntM4T = (M4||0)*10000; // concentrateur -> trinium
-        const EntretienM = EntM1M + EntM4M;
-        const EntretienT = EntM1T + EntM4T;
+        // Modules existants
+        const M1    = toNum(o.M1);   // Modules Minier
+        const M4    = toNum(o.M4);   // Concentrateurs
+
+        // --- Nouveaux modules (comptes) ---
+        const M1M   = toNum(o.M1M);   // Extract. Télurique
+        const M1MH  = toNum(o.M1MH);  // Col. Minière
+        const M1T   = toNum(o.M1T);   // Extr. Jovien
+        const M1TH  = toNum(o.M1TH);  // Raf. Mobile
+
+        // coûts d’entretien (/j) EXISTANTS
+        const EntM1M = (M1||0)*10000;   // module minier -> métal
+        const EntM1T = (M1||0)*5000;    // module minier -> tritium
+        const EntM4M = (M4||0)*20000;   // concentrateur -> métal
+        const EntM4T = (M4||0)*10000;   // concentrateur -> tritium
+
+        // coûts d’entretien (/j) NOUVEAUX (par module)
+        // M1M : 10M/j Métal, 5M/j Tritium
+        const EntM1MM  = (M1M ||0)*10_000_000;
+        const EntM1MT  = (M1M ||0)*5_000_000;
+        // M1MH : 10M/j Métal, 5M/j Tritium
+        const EntM1MHM = (M1MH||0)*10_000_000;
+        const EntM1MHT = (M1MH||0)*5_000_000;
+        // M1T : 5M/j Métal, 2.5M/j Tritium
+        const EntM1TM  = (M1T ||0)*5_000_000;
+        const EntM1TT  = (M1T ||0)*2_500_000;
+        // M1TH : 10M/j Métal, 5M/j Tritium
+        const EntM1THM = (M1TH||0)*10_000_000;
+        const EntM1THT = (M1TH||0)*5_000_000;
+
+        // totaux d’entretien (/j)
+        const EntretienM = EntM1M + EntM4M + EntM1MM + EntM1MHM + EntM1TM + EntM1THM;
+        const EntretienT = EntM1T + EntM4T + EntM1MT + EntM1MHT + EntM1TT + EntM1THT;
 
         // rentabilité /j
         const RentaM = (ProdM||0)*24 - EntretienM;
@@ -70,9 +99,16 @@
             Type: o.Type||'',
             ProdM, ProdT, ProdP,
             ResM, ResT, ResP,
-            M1, M4,
+
+            // modules
+            M1, M4, M1M, M1MH, M1T, M1TH,
+
+            // entretiens (groupes & détails)
             EntretienM, EntretienT,
-            EntM1M, EntM1T, EntM4M, EntM4T,
+            EntM1M, EntM1T, EntM4M, EntM4T, // existants
+            EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT, // nouveaux
+
+            // rentabilité
             RentaM, RentaT
         });
     });
@@ -134,15 +170,15 @@
     });
     w1.innerHTML = `<h3>Productions</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ProdM)}/h — ${abbr(totals.ProdM*24)}/j</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Trinium</span><span>${abbr(totals.ProdT)}/h — ${abbr(totals.ProdT*24)}/j</span></div>
+    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ProdT)}/h — ${abbr(totals.ProdT*24)}/j</span></div>
     <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ProdP)}/j</span></div>`;
     w2.innerHTML = `<h3>Stock</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ResM)}</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Trinium</span><span>${abbr(totals.ResT)}</span></div>
+    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ResT)}</span></div>
     <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ResP)}</span></div>`;
     w3.innerHTML = `<h3>Rentabilité</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span class="${totals.RentaM>=0?'sx-green':'sx-red'}">${abbr(totals.RentaM)}/j</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Trinium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
+    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
 
     // ---- controls ----
     const controlsEl = document.createElement('div'); controlsEl.className='sx-controls';
@@ -166,29 +202,51 @@
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
         {label:'Type', key:'Type', show:true},
+
         {label:'Prod.', key:'ProdGroup', show:true},
 
         // détaillées APRÈS "Prod." (cachées par défaut)
         {label:'Prod Metal', key:'ProdM', show:false},
-        {label:'Prod Trinium', key:'ProdT', show:false},
+        {label:'Prod Tritium', key:'ProdT', show:false},
         {label:'Prod PhotoP', key:'ProdP', show:false},
         {label:'Metal', key:'ResM', show:false},
-        {label:'Trinium', key:'ResT', show:false},
+        {label:'Tritium', key:'ResT', show:false},
         {label:'PhotoP', key:'ResP', show:false},
 
         {label:'Stock', key:'StockGroup', show:true},
-        {label:'Modules Minier', key:'M1', show:true},
-        {label:'Concentrateur', key:'M4', show:true},
+
+        // ---- Nouvelle colonne groupe "Modules" ----
+        {label:'Modules', key:'ModulesGroup', show:true},
+
+        // Colonnes individuelles des modules (cachées)
+        {label:'Mod. Minier', key:'M1', show:false},
+        {label:'Concent.', key:'M4', show:false},
+        {label:'Extract. Télurique', key:'M1M', show:false},
+        {label:'Col. Minière', key:'M1MH', show:false},
+        {label:'Extr. Jovien', key:'M1T', show:false},
+        {label:'Raf. Mobile', key:'M1TH', show:false},
 
         // duplicats pour export (cachés)
-        {label:'Mod. Minier', key:'M1_ind', show:false},
-        {label:'Collecteur', key:'M4_ind', show:false},
+        {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
+        {label:'Concent. (ind)', key:'M4_ind', show:false},
 
         {label:'Entretien', key:'EntGroup', show:true},
-        {label:'Entr. Mod. Minier metal', key:'EntM1M', show:false},
-        {label:'Entr. Mod. Minier Trinium', key:'EntM1T', show:false},
-        {label:'Entr. Concentrateur metal', key:'EntM4M', show:false},
-        {label:'Entr. Concentrateur Trinium', key:'EntM4T', show:false},
+
+        // Détails d’entretien existants (cachés)
+        {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
+        {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
+        {label:'Entr. Concent. métal', key:'EntM4M', show:false},
+        {label:'Entr. Concent. Tritium', key:'EntM4T', show:false},
+
+        // Détails d’entretien nouveaux (cachés)
+        {label:'Entr. Extract. Télurique métal', key:'EntM1MM', show:false},
+        {label:'Entr. Extract. Télurique Tritium', key:'EntM1MT', show:false},
+        {label:'Entr. Col. Minière métal', key:'EntM1MHM', show:false},
+        {label:'Entr. Col. Minière Tritium', key:'EntM1MHT', show:false},
+        {label:'Entr. Extr. Jovien métal', key:'EntM1TM', show:false},
+        {label:'Entr. Extr. Jovien Tritium', key:'EntM1TT', show:false},
+        {label:'Entr. Raf. Mobile métal', key:'EntM1THM', show:false},
+        {label:'Entr. Raf. Mobile Tritium', key:'EntM1THT', show:false},
 
         {label:'Renta', key:'RentaGroup', show:true},
         {label:'Action', key:'Action', show:true},
@@ -270,6 +328,20 @@
               <div><img src="${icon.T}" width="14"> ${abbr(r.ResT)}</div>
               <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
                         break;
+
+                    // ---- Groupe "Modules" (affichage vertical propre) ----
+                    case 'ModulesGroup': {
+                        let html = '';
+                        if (r.M1)   html += `<div>Mod. Minier: <b>${abbr(r.M1)}</b></div>`;
+                        if (r.M4)   html += `<div>Concent.: <b>${abbr(r.M4)}</b></div>`;
+                        if (r.M1M)  html += `<div>Extract. Télurique: <b>${abbr(r.M1M)}</b></div>`;
+                        if (r.M1MH) html += `<div>Col. Minière: <b>${abbr(r.M1MH)}</b></div>`;
+                        if (r.M1T)  html += `<div>Extr. Jovien: <b>${abbr(r.M1T)}</b></div>`;
+                        if (r.M1TH) html += `<div>Raf. Mobile: <b>${abbr(r.M1TH)}</b></div>`;
+                        td.innerHTML = html;
+                        break;
+                    }
+
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -281,7 +353,7 @@
               <div><img src="${icon.T}" width="14"> <span class="${r.RentaT>=0?'sx-green':'sx-red'}">${withUnit('RentaT',r.RentaT)}</span></div>`;
                         break;
 
-                    // simples
+                    // simples (cachés par défaut)
                     case 'ProdM': td.textContent = withUnit('ProdM', r.ProdM); break;
                     case 'ProdT': td.textContent = withUnit('ProdT', r.ProdT); break;
                     case 'ProdP': td.textContent = withUnit('ProdP', r.ProdP); break;
@@ -290,12 +362,27 @@
                     case 'ResP':  td.textContent = abbr(r.ResP); break;
                     case 'M1':    td.textContent = abbr(r.M1); break;
                     case 'M4':    td.textContent = abbr(r.M4); break;
+                    case 'M1M':   td.textContent = abbr(r.M1M); break;
+                    case 'M1MH':  td.textContent = abbr(r.M1MH); break;
+                    case 'M1T':   td.textContent = abbr(r.M1T); break;
+                    case 'M1TH':  td.textContent = abbr(r.M1TH); break;
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
-                    case 'EntM1M':td.textContent = withUnit('EntM1M', r.EntM1M); break;
-                    case 'EntM1T':td.textContent = withUnit('EntM1T', r.EntM1T); break;
-                    case 'EntM4M':td.textContent = withUnit('EntM4M', r.EntM4M); break;
-                    case 'EntM4T':td.textContent = withUnit('EntM4T', r.EntM4T); break;
+
+                    // Détails d’entretien (cachés mais exportables)
+                    case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
+                    case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
+                    case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
+                    case 'EntM4T':  td.textContent = withUnit('EntM4T',  r.EntM4T); break;
+
+                    case 'EntM1MM': td.textContent = withUnit('EntM1MM', r.EntM1MM); break;
+                    case 'EntM1MT': td.textContent = withUnit('EntM1MT', r.EntM1MT); break;
+                    case 'EntM1MHM':td.textContent = withUnit('EntM1MHM',r.EntM1MHM); break;
+                    case 'EntM1MHT':td.textContent = withUnit('EntM1MHT',r.EntM1MHT); break;
+                    case 'EntM1TM': td.textContent = withUnit('EntM1TM', r.EntM1TM); break;
+                    case 'EntM1TT': td.textContent = withUnit('EntM1TT', r.EntM1TT); break;
+                    case 'EntM1THM':td.textContent = withUnit('EntM1THM',r.EntM1THM); break;
+                    case 'EntM1THT':td.textContent = withUnit('EntM1THT',r.EntM1THT); break;
 
                     case 'Action': {
                         const sid = (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : '';
@@ -334,6 +421,14 @@
                 case 'Type': return r.Type;
                 case 'ProdGroup': return `M:${r.ProdM||0}/h | T:${r.ProdT||0}/h | P:${r.ProdP||0}/j`;
                 case 'StockGroup': return `M:${r.ResM||0} | T:${r.ResT||0} | P:${r.ResP||0}`;
+                case 'ModulesGroup': return [
+                    r.M1?`Mod. Minier:${r.M1}`:null,
+                    r.M4?`Concent.:${r.M4}`:null,
+                    r.M1M?`Extract. Télurique:${r.M1M}`:null,
+                    r.M1MH?`Col. Minière:${r.M1MH}`:null,
+                    r.M1T?`Extr. Jovien:${r.M1T}`:null,
+                    r.M1TH?`Raf. Mobile:${r.M1TH}`:null,
+                ].filter(Boolean).join(' | ');
                 case 'EntGroup': return `M:${r.EntretienM||0}/j | T:${r.EntretienT||0}/j`;
                 case 'RentaGroup': return `M:${r.RentaM||0}/j | T:${r.RentaT||0}/j`;
                 case 'M1_ind': return r.M1;
