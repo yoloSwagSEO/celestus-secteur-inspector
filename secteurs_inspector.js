@@ -147,6 +147,22 @@
   .sx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
   .sx-actions a:hover{background:#202a52}
   .sx-actions img{width:18px;height:18px}
+  .sx-colmenu{
+  position:fixed;
+  background:#151c2f;
+  border:1px solid #3a4a7a;
+  border-radius:10px;
+  padding:10px;
+  display:none;
+  flex-direction:column;
+  gap:6px;
+  z-index:2147483647;
+  box-shadow:0 12px 30px rgba(0,0,0,.5);
+
+  /* ajout pour scrollbar */
+  max-height: 50vh;   /* ou 60vh, ajuste selon confort */
+  overflow-y: auto;
+}
   `;
     const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
 
