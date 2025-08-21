@@ -55,8 +55,8 @@
         const ResP  = toNum(o.ResP);
 
         // Modules existants
-        const M1    = toNum(o.M1);   // Modules Minier
-        const M4    = toNum(o.M4);   // Concentrateurs
+        const M1    = toNum(o.M1);   // Mod. Minier
+        const M4    = toNum(o.M4);   // Concent.
 
         // --- Nouveaux modules (comptes) ---
         const M1M   = toNum(o.M1M);   // Extract. Télurique
@@ -65,10 +65,10 @@
         const M1TH  = toNum(o.M1TH);  // Raf. Mobile
 
         // coûts d’entretien (/j) EXISTANTS
-        const EntM1M = (M1||0)*10000;   // module minier -> métal
-        const EntM1T = (M1||0)*5000;    // module minier -> tritium
-        const EntM4M = (M4||0)*20000;   // concentrateur -> métal
-        const EntM4T = (M4||0)*10000;   // concentrateur -> tritium
+        const EntM1M = (M1||0)*10000;   // mod. minier -> métal
+        const EntM1T = (M1||0)*5000;    // mod. minier -> tritium
+        const EntM4M = (M4||0)*20000;   // concent. -> métal
+        const EntM4T = (M4||0)*10000;   // concent. -> tritium
 
         // coûts d’entretien (/j) NOUVEAUX (par module)
         // M1M : 10M/j Métal, 5M/j Tritium
@@ -446,9 +446,43 @@
     }
 
     // ---- mount ----
-    bodyEl.append(widgetsEl, controlsEl, tableEl);
-    winEl.append(headEl, bodyEl);
+    const frag = document.createDocumentFragment();
+    const bodyWrap = document.createElement('div');
+    bodyWrap.appendChild(widgetsEl);
+    bodyWrap.appendChild(controlsEl);
+    bodyWrap.appendChild(tableEl);
+    frag.appendChild(headEl);
+    frag.appendChild(bodyWrap);
+    winEl.appendChild(frag);
+    winEl.classList.add('sx-win');
     document.body.appendChild(winEl);
+
+    // ---------- Bornage fenêtre (anti-dépassement) ----------
+    const MARGIN = 8; // marge visible minimale
+    function clampPos(left, top) {
+        const w = winEl.offsetWidth;
+        const h = winEl.offsetHeight;
+        const maxLeft = Math.max(MARGIN, window.innerWidth - w - MARGIN);
+        const maxTop  = Math.max(MARGIN, window.innerHeight - h - MARGIN);
+        return {
+            left: Math.min(Math.max(left, MARGIN), maxLeft),
+            top:  Math.min(Math.max(top,  MARGIN), maxTop)
+        };
+    }
+    function clampSize() {
+        const rect = winEl.getBoundingClientRect();
+        const maxW = Math.max(200, window.innerWidth  - rect.left - MARGIN);
+        const maxH = Math.max(160, window.innerHeight - rect.top  - MARGIN);
+        if (rect.width  > maxW) winEl.style.width  = `${maxW}px`;
+        if (rect.height > maxH) winEl.style.height = `${maxH}px`;
+    }
+    function clampAll() {
+        const rect = winEl.getBoundingClientRect();
+        const pos = clampPos(rect.left, rect.top);
+        winEl.style.left = `${pos.left}px`;
+        winEl.style.top  = `${pos.top}px`;
+        clampSize();
+    }
 
     // events
     headEl.querySelector('.sx-close').onclick=()=>{
@@ -461,20 +495,38 @@
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
     document.addEventListener('click',(ev)=>{ if(!colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu(); });
 
-    // draggable (hors inputs/boutons)
+    // draggable (hors inputs/boutons) + bornage
     let drag=false, dx=0, dy=0;
     headEl.addEventListener('mousedown',e=>{
         if(e.target.closest('button, input, .sx-close')) return;
-        drag=true; dx=e.clientX-winEl.offsetLeft; dy=e.clientY-winEl.offsetTop;
+        drag=true;
+        const rect = winEl.getBoundingClientRect();
+        dx = e.clientX - rect.left;
+        dy = e.clientY - rect.top;
+        e.preventDefault();
     });
     document.addEventListener('mousemove',e=>{
-        if(drag){ winEl.style.left=(e.clientX-dx)+'px'; winEl.style.top=(e.clientY-dy)+'px'; }
+        if(!drag) return;
+        const left = e.clientX - dx;
+        const top  = e.clientY - dy;
+        const pos  = clampPos(left, top);
+        winEl.style.left = `${pos.left}px`;
+        winEl.style.top  = `${pos.top}px`;
     });
     document.addEventListener('mouseup',()=>drag=false);
 
+    // anti-dépassement pendant/after resize
+    if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => clampSize());
+        ro.observe(winEl);
+    }
+    winEl.addEventListener('mouseup', clampAll);
+    window.addEventListener('resize', clampAll);
+
     // initial
     render();
+    requestAnimationFrame(clampAll);
 
     // API
-    window.__secteursInspector = { open(){ winEl.style.display='flex'; } };
+    window.__secteursInspector = { open(){ winEl.style.display='flex'; clampAll(); } };
 })();
