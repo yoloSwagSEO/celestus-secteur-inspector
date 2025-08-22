@@ -39,6 +39,22 @@
     };
     const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
+    // --- temps relatif pour "Dernière récolte" ---
+    const lsKey = id => `secteur_recolte_${id}`;
+    function timeAgoLabel(ts){
+        const t = Number(ts);
+        if (!Number.isFinite(t)) return 'N/A';
+        const diff = Math.max(0, Date.now() - t); // ms
+        const s = Math.floor(diff/1000);
+        if (s < 60) return `il y a ${s}s`;
+        const m = Math.floor(s/60);
+        if (m < 60) return `il y a ${m}m`;
+        const h = Math.floor(m/60);
+        if (h < 24) return `il y a ${h}h`;
+        const d = Math.floor(h/24);
+        return `il y a ${d}j`;
+    }
+
     // ---------- Lire Secteurs ----------
     const raw = (window.Secteurs ?? {});
     const rows = [];
@@ -198,10 +214,11 @@
     const fT = document.createElement('input'); fT.type='checkbox'; fTWrap.append(fT, document.createTextNode(' Non rentables T'));
     leftEl.append(searchEl, fMWrap, fTWrap);
 
+    const btnRefresh = document.createElement('button'); btnRefresh.className='sx-btn'; btnRefresh.title='Rafraîchir'; btnRefresh.textContent='🔄';
     const btnCsv = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.textContent='📥 Export CSV';
     const btnCols = document.createElement('button'); btnCols.className='sx-btn'; btnCols.textContent='⚙ Colonnes';
     const btnDbg = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.textContent='🐞 Debug';
-    rightEl.append(btnCsv, btnCols, btnDbg);
+    rightEl.append(btnRefresh, btnCsv, btnCols, btnDbg);
     controlsEl.append(leftEl, rightEl);
 
     // ---- colonnes (ordre & visibilité) ----
@@ -212,6 +229,7 @@
 
         {label:'Prod.', key:'ProdGroup', show:true},
 
+        // détaillées APRÈS "Prod." (cachées par défaut)
         {label:'Prod Metal', key:'ProdM', show:false},
         {label:'Prod Tritium', key:'ProdT', show:false},
         {label:'Prod PhotoP', key:'ProdP', show:false},
@@ -221,8 +239,10 @@
 
         {label:'Stock', key:'StockGroup', show:true},
 
+        // ---- Groupe "Modules" ----
         {label:'Modules', key:'ModulesGroup', show:true},
 
+        // Colonnes individuelles des modules (cachées)
         {label:'Mod. Minier', key:'M1', show:false},
         {label:'Concent.', key:'M4', show:false},
         {label:'Extract. Télurique', key:'M1M', show:false},
@@ -230,16 +250,19 @@
         {label:'Extr. Jovien', key:'M1T', show:false},
         {label:'Raf. Mobile', key:'M1TH', show:false},
 
+        // duplicats pour export (cachés)
         {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
         {label:'Concent. (ind)', key:'M4_ind', show:false},
 
         {label:'Entretien', key:'EntGroup', show:true},
 
+        // Détails d’entretien existants (cachés)
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
         {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
         {label:'Entr. Concent. métal', key:'EntM4M', show:false},
         {label:'Entr. Concent. Tritium', key:'EntM4T', show:false},
 
+        // Détails d’entretien nouveaux (cachés)
         {label:'Entr. Extract. Télurique métal', key:'EntM1MM', show:false},
         {label:'Entr. Extract. Télurique Tritium', key:'EntM1MT', show:false},
         {label:'Entr. Col. Minière métal', key:'EntM1MHM', show:false},
@@ -250,6 +273,10 @@
         {label:'Entr. Raf. Mobile Tritium', key:'EntM1THT', show:false},
 
         {label:'Renta', key:'RentaGroup', show:true},
+
+        // Nouvelle colonne
+        {label:'Dernière récolte', key:'LastHarvest', show:true},
+
         {label:'Action', key:'Action', show:true},
     ];
 
@@ -332,6 +359,8 @@
               <div><img src="${icon.T}" width="14"> ${abbr(r.ResT)}</div>
               <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
                         break;
+
+                    // ---- Groupe "Modules" ----
                     case 'ModulesGroup': {
                         let html = '';
                         if (r.M1)   html += `<div>Mod. Minier: <b>${abbr(r.M1)}</b></div>`;
@@ -343,6 +372,7 @@
                         td.innerHTML = html;
                         break;
                     }
+
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -353,6 +383,20 @@
               <div><img src="${icon.M}" width="14"> <span class="${r.RentaM>=0?'sx-green':'sx-red'}">${withUnit('RentaM',r.RentaM)}</span></div>
               <div><img src="${icon.T}" width="14"> <span class="${r.RentaT>=0?'sx-green':'sx-red'}">${withUnit('RentaT',r.RentaT)}</span></div>`;
                         break;
+
+                    // ---- Dernière récolte ----
+                    case 'LastHarvest': {
+                        const id = r.ID;
+                        let label = 'N/A';
+                        if (id) {
+                            try {
+                                const ts = localStorage.getItem(lsKey(id));
+                                label = ts ? timeAgoLabel(ts) : 'N/A';
+                            } catch {}
+                        }
+                        td.textContent = label;
+                        break;
+                    }
 
                     // simples (cachés par défaut)
                     case 'ProdM': td.textContent = withUnit('ProdM', r.ProdM); break;
@@ -370,7 +414,7 @@
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // Détails d’entretien
+                    // Détails d’entretien (cachés mais exportables)
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
@@ -432,6 +476,14 @@
                 ].filter(Boolean).join(' | ');
                 case 'EntGroup': return `M:${r.EntretienM||0}/j | T:${r.EntretienT||0}/j`;
                 case 'RentaGroup': return `M:${r.RentaM||0}/j | T:${r.RentaT||0}/j`;
+                case 'LastHarvest': {
+                    const id = r.ID;
+                    if (!id) return 'N/A';
+                    try {
+                        const ts = localStorage.getItem(lsKey(id));
+                        return ts ? timeAgoLabel(ts) : 'N/A';
+                    } catch { return 'N/A'; }
+                }
                 case 'M1_ind': return r.M1;
                 case 'M4_ind': return r.M4;
                 default: return r[key];
@@ -517,10 +569,30 @@
     };
     searchEl.oninput = render;
     fM.onchange = render; fT.onchange = render;
+    btnRefresh.onclick = render;
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
     btnDbg.onclick  = exportJSON;
-    document.addEventListener('click',(ev)=>{ if(!colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu(); });
+    document.addEventListener('click',(ev)=>{
+        // fermer menu colonnes si clic ailleurs
+        if(!colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
+
+        // Intercepter clic sur "Récolter" pour enregistrer d'abord l'heure, puis suivre le lien
+        const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
+        if (a && a.closest('.sx-actions')) {
+            ev.preventDefault();
+            try{
+                const url = new URL(a.href, location.href);
+                const id = url.searchParams.get('IDCible');
+                if (id) localStorage.setItem(lsKey(id), String(Date.now()));
+            }catch{}
+            // refresh local (affichera "il y a 0s")
+            render();
+            // puis ouvrir le lien (respecte le target du <a>)
+            const target = a.getAttribute('target') || '_self';
+            window.open(a.href, target);
+        }
+    });
 
     // draggable (hors inputs/boutons) + bornage
     let drag=false, dx=0, dy=0;
@@ -550,6 +622,7 @@
     window.addEventListener('resize', clampAll);
 
     // initial
+    // widgets doivent être remplis après les totaux; c'est déjà fait plus haut
     render();
     requestAnimationFrame(clampAll);
 
