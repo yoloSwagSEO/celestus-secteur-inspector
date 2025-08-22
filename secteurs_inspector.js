@@ -44,7 +44,7 @@
     function timeAgoLabel(ts){
         const t = Number(ts);
         if (!Number.isFinite(t)) return 'N/A';
-        const diff = Math.max(0, Date.now() - t); // ms
+        const diff = Math.max(0, Date.now() - t);
         const s = Math.floor(diff/1000);
         if (s < 60) return `il y a ${s}s`;
         const m = Math.floor(s/60);
@@ -54,6 +54,25 @@
         const d = Math.floor(h/24);
         return `il y a ${d}j`;
     }
+
+    // ------- Définitions de vaisseaux (toujours window.Vaisseaux) -------
+    const SHIP_DEFS = (() => {
+        const defs = new Map();
+        const src = window.Vaisseaux || {};
+        try {
+            Reflect.ownKeys(src).forEach(k => {
+                try {
+                    const v = src[k];
+                    if (!v) return;
+                    const code = String((v.Code ?? k) || '');
+                    if (!code) return;
+                    defs.set(code, v);
+                } catch {}
+            });
+        } catch {}
+        return defs;
+    })();
+    const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
     // ---------- Lire Secteurs ----------
     const raw = (window.Secteurs ?? {});
@@ -70,64 +89,71 @@
         const ResP  = toNum(o.ResP);
 
         // Modules existants
-        const M1    = toNum(o.M1);   // Mod. Minier
-        const M4    = toNum(o.M4);   // Concent.
+        const M1    = toNum(o.M1);
+        const M4    = toNum(o.M4);
 
         // Nouveaux modules
-        const M1M   = toNum(o.M1M);   // Extract. Télurique
-        const M1MH  = toNum(o.M1MH);  // Col. Minière
-        const M1T   = toNum(o.M1T);   // Extr. Jovien
-        const M1TH  = toNum(o.M1TH);  // Raf. Mobile
+        const M1M   = toNum(o.M1M);
+        const M1MH  = toNum(o.M1MH);
+        const M1T   = toNum(o.M1T);
+        const M1TH  = toNum(o.M1TH);
 
-        // AIA (pour affichage du type)
+        // AIA
         const AIA   = toNum(o.AIA);
 
-        // coûts d’entretien (/j) EXISTANTS
-        const EntM1M = (M1||0)*10000;   // mod. minier -> métal
-        const EntM1T = (M1||0)*5000;    // mod. minier -> tritium
-        const EntM4M = (M4||0)*20000;   // concent. -> métal
-        const EntM4T = (M4||0)*10000;   // concent. -> tritium
+        // coûts d’entretien
+        const EntM1M = (M1||0)*10000;
+        const EntM1T = (M1||0)*5000;
+        const EntM4M = (M4||0)*20000;
+        const EntM4T = (M4||0)*10000;
 
-        // coûts d’entretien (/j) NOUVEAUX (par module)
-        const EntM1MM  = (M1M ||0)*10_000_000; // M1M : 10M/j Métal
-        const EntM1MT  = (M1M ||0)*5_000_000;  // M1M : 5M/j Tritium
-        const EntM1MHM = (M1MH||0)*10_000_000; // M1MH : 10M/j Métal
-        const EntM1MHT = (M1MH||0)*5_000_000;  // M1MH : 5M/j Tritium
-        const EntM1TM  = (M1T ||0)*5_000_000;  // M1T : 5M/j Métal
-        const EntM1TT  = (M1T ||0)*2_500_000;  // M1T : 2.5M/j Tritium
-        const EntM1THM = (M1TH||0)*10_000_000; // M1TH : 10M/j Métal
-        const EntM1THT = (M1TH||0)*5_000_000;  // M1TH : 5M/j Tritium
+        const EntM1MM  = (M1M ||0)*10_000_000;
+        const EntM1MT  = (M1M ||0)*5_000_000;
+        const EntM1MHM = (M1MH||0)*10_000_000;
+        const EntM1MHT = (M1MH||0)*5_000_000;
+        const EntM1TM  = (M1T ||0)*5_000_000;
+        const EntM1TT  = (M1T ||0)*2_500_000;
+        const EntM1THM = (M1TH||0)*10_000_000;
+        const EntM1THT = (M1TH||0)*5_000_000;
 
-        // totaux d’entretien (/j)
         const EntretienM = EntM1M + EntM4M + EntM1MM + EntM1MHM + EntM1TM + EntM1THM;
         const EntretienT = EntM1T + EntM4T + EntM1MT + EntM1MHT + EntM1TT + EntM1THT;
 
-        // rentabilité /j
         const RentaM = (ProdM||0)*24 - EntretienM;
         const RentaT = (ProdT||0)*24 - EntretienT;
+
+        // -------- Flotte (hors modules) --------
+        let FleetTotal = 0;
+        const FleetBreakdown = [];
+        if (SHIP_DEFS.size){
+            Object.entries(o).forEach(([code, val])=>{
+                const n = toNum(val);
+                if (!n) return;
+                const c = String(code);
+                if (MODULE_CODES.has(c)) return;
+                if (!SHIP_DEFS.has(c)) return;
+                FleetTotal += n;
+                const def = SHIP_DEFS.get(c) || {};
+                const name = def.Nom || def.NomC || def.NomCourt || c;
+                FleetBreakdown.push({ name, qty:n });
+            });
+            FleetBreakdown.sort((a,b)=>b.qty-a.qty);
+        }
 
         rows.push({
             IMG: o.IMG ? String(o.IMG) : '',
             Adresse: o.Adresse||'',
             ID: o.ID ? String(o.ID) : '',
-            // Type affiché : si "Rien" et AIA>0 => "AIA", sinon valeur d'origine
             Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
             ProdM, ProdT, ProdP,
             ResM, ResT, ResP,
-
-            // modules
             M1, M4, M1M, M1MH, M1T, M1TH,
-
-            // AIA conservé si utile plus tard
             AIA,
-
-            // entretiens (groupes & détails)
             EntretienM, EntretienT,
             EntM1M, EntM1T, EntM4M, EntM4T,
             EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
-
-            // rentabilité
-            RentaM, RentaT
+            RentaM, RentaT,
+            FleetTotal, FleetBreakdown
         });
     });
 
@@ -153,10 +179,11 @@
   .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
   .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
   .sx-btn:hover{background:#1d2947}
+
   .sx-colmenu{
     position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
     padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
-    max-height:70vh; overflow-y:auto; /* scrollbar pour les colonnes */
+    max-height:70vh; overflow-y:auto;
   }
   .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
@@ -169,6 +196,14 @@
   .sx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
   .sx-actions a:hover{background:#202a52}
   .sx-actions img{width:18px;height:18px}
+
+  /* Tooltip HTML */
+  .sx-tip{position:fixed;z-index:2147483647;display:none;max-width:340px;background:#0f1422;border:1px solid #3a4a7a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
+  .sx-tip h4{margin:0 0 6px;font-size:12px;font-weight:700;color:#ffd4a3}
+  .sx-tip-list{max-height:220px;overflow:auto}
+  .sx-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
+  .sx-tip-item span:first-child{opacity:.9}
+  .sx-tip-item span:last-child{font-weight:700}
   `;
     const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
 
@@ -176,6 +211,25 @@
     const headEl = document.createElement('div'); headEl.className='sx-head';
     headEl.innerHTML = `<div class="sx-title">Secteurs Inspector</div><div class="sx-close">Fermer</div>`;
     const bodyEl = document.createElement('div'); bodyEl.className='sx-body';
+
+    // Tooltip element
+    const tipEl = document.createElement('div');
+    tipEl.className = 'sx-tip';
+    tipEl.innerHTML = `<h4>Flotte présente</h4><div class="sx-tip-list"></div>`;
+    document.body.appendChild(tipEl);
+    const tipList = tipEl.querySelector('.sx-tip-list');
+    function showTip(html, x, y){
+        tipList.innerHTML = html;
+        tipEl.style.display = 'block';
+        // Position clamped to viewport
+        const r = tipEl.getBoundingClientRect();
+        let left = x + 12, top = y + 12;
+        if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
+        if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
+        tipEl.style.left = `${left}px`;
+        tipEl.style.top  = `${top}px`;
+    }
+    function hideTip(){ tipEl.style.display = 'none'; }
 
     // ---- widgets ----
     const widgetsEl = document.createElement('div'); widgetsEl.className='sx-widgets';
@@ -248,6 +302,9 @@
         {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
         {label:'Concent. (ind)', key:'M4_ind', show:false},
 
+        // NOUVELLE COLONNE
+        {label:'Flotte', key:'Flotte', show:true},
+
         {label:'Entretien', key:'EntGroup', show:true},
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
         {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
@@ -263,10 +320,7 @@
         {label:'Entr. Raf. Mobile Tritium', key:'EntM1THT', show:false},
 
         {label:'Renta', key:'RentaGroup', show:true},
-
-        // Nouvelle colonne
         {label:'Dernière récolte', key:'LastHarvest', show:true},
-
         {label:'Action', key:'Action', show:true},
     ];
 
@@ -362,6 +416,25 @@
                         td.innerHTML = html;
                         break;
                     }
+
+                    // ---- Flotte (total + tooltip HTML) ----
+                    case 'Flotte': {
+                        const total = r.FleetTotal || 0;
+                        td.textContent = String(total);
+                        if (r.FleetBreakdown && r.FleetBreakdown.length){
+                            td.dataset.tipHtml = r.FleetBreakdown
+                                .map(it => `<div class="sx-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`)
+                                .join('');
+                            td.classList.add('sx-has-tip');
+                            td.style.cursor = 'help';
+                        } else {
+                            td.dataset.tipHtml = `<div class="sx-tip-item"><span>Aucun vaisseau</span><span>0</span></div>`;
+                            td.classList.add('sx-has-tip');
+                            td.style.cursor = 'help';
+                        }
+                        break;
+                    }
+
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -373,7 +446,6 @@
               <div><img src="${icon.T}" width="14"> <span class="${r.RentaT>=0?'sx-green':'sx-red'}">${withUnit('RentaT',r.RentaT)}</span></div>`;
                         break;
 
-                    // ---- Dernière récolte ----
                     case 'LastHarvest': {
                         let label = 'N/A';
                         try {
@@ -400,7 +472,7 @@
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // Détails d’entretien (cachés mais exportables)
+                    // Détails d’entretien
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
@@ -439,7 +511,7 @@
         });
     }
 
-    // ---- Export CSV (toutes colonnes, même masquées) ----
+    // ---- Export CSV ----
     function exportCSV(){
         const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
         const headerLabels = headers.map(h=>h.label || '');
@@ -460,6 +532,11 @@
                     r.M1T?`Extr. Jovien:${r.M1T}`:null,
                     r.M1TH?`Raf. Mobile:${r.M1TH}`:null,
                 ].filter(Boolean).join(' | ');
+                case 'Flotte': {
+                    if (!r.FleetTotal) return 0;
+                    const tip = (r.FleetBreakdown||[]).map(it => `${it.name}:${it.qty}`).join(' | ');
+                    return `${r.FleetTotal}${tip ? ' — '+tip : ''}`;
+                }
                 case 'EntGroup': return `M:${r.EntretienM||0}/j | T:${r.EntretienT||0}/j`;
                 case 'RentaGroup': return `M:${r.RentaM||0}/j | T:${r.RentaT||0}/j`;
                 case 'LastHarvest': {
@@ -551,27 +628,31 @@
     // ---------- events ----------
     headEl.querySelector('.sx-close').onclick=()=>{
         try{ window.__secteursInspector=undefined; }catch{}
-        winEl.remove(); styleEl.remove(); colMenuEl.remove();
+        winEl.remove(); styleEl.remove(); colMenuEl.remove(); tipEl.remove();
     };
-    // boutons
     btnRefresh.onclick = render;
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
     btnDbg.onclick  = exportJSON;
 
-    // filtres
-    const searchElInput = searchEl; // juste pour lisibilité
-    searchElInput.oninput = render;
+    searchEl.oninput = render;
     fM.onchange = render; fT.onchange = render;
 
-    // Interception unique du clic Récolter (évite double mission)
-    document.addEventListener('click',(ev)=>{
-        // Fermer le menu colonnes si clic ailleurs
-        if (colMenuEl.style.display === 'flex' && !colMenuEl.contains(ev.target) && ev.target !== btnCols) {
-            hideColMenu();
-        }
+    // Tooltip delegation on table (for Flotte cells)
+    tableEl.addEventListener('mousemove', (e)=>{
+        const td = e.target.closest('td.sx-has-tip');
+        if (!td || !tableEl.contains(td)) { hideTip(); return; }
+        const html = td.dataset.tipHtml || '';
+        if (!html) { hideTip(); return; }
+        showTip(html, e.clientX, e.clientY);
+    });
+    tableEl.addEventListener('mouseleave', hideTip);
+    window.addEventListener('scroll', hideTip, true);
 
-        // Clic sur "Récolter" dans notre tableau
+    // Interception du clic Récolter : maj localStorage puis ouverture unique
+    document.addEventListener('click',(ev)=>{
+        if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
+
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
@@ -581,13 +662,11 @@
                 const id = url.searchParams.get('IDCible');
                 if (id) localStorage.setItem(lsKey(id), String(Date.now()));
             }catch{}
-            // refresh local (affichera "il y a 0s")
             render();
-            // puis ouvrir le lien (respecte le target du <a>), une seule fois
             const target = a.getAttribute('target') || '_self';
             window.open(a.href, target);
         }
-    }, true); // capture: true
+    }, true);
 
     // drag + bornage
     let drag=false, dx=0, dy=0;
