@@ -28,7 +28,6 @@
         if ([
             'ProdP','EntretienM','EntretienT','RentaM','RentaT',
             'EntM1M','EntM1T','EntM4M','EntM4T',
-            // nouveaux détails d’entretien :
             'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
         ].includes(key)) return `${s}/j`;
         return s;
@@ -58,11 +57,14 @@
         const M1    = toNum(o.M1);   // Mod. Minier
         const M4    = toNum(o.M4);   // Concent.
 
-        // --- Nouveaux modules (comptes) ---
+        // Nouveaux modules
         const M1M   = toNum(o.M1M);   // Extract. Télurique
         const M1MH  = toNum(o.M1MH);  // Col. Minière
         const M1T   = toNum(o.M1T);   // Extr. Jovien
         const M1TH  = toNum(o.M1TH);  // Raf. Mobile
+
+        // AIA (pour affichage du type)
+        const AIA   = toNum(o.AIA);
 
         // coûts d’entretien (/j) EXISTANTS
         const EntM1M = (M1||0)*10000;   // mod. minier -> métal
@@ -71,18 +73,14 @@
         const EntM4T = (M4||0)*10000;   // concent. -> tritium
 
         // coûts d’entretien (/j) NOUVEAUX (par module)
-        // M1M : 10M/j Métal, 5M/j Tritium
-        const EntM1MM  = (M1M ||0)*10_000_000;
-        const EntM1MT  = (M1M ||0)*5_000_000;
-        // M1MH : 10M/j Métal, 5M/j Tritium
-        const EntM1MHM = (M1MH||0)*10_000_000;
-        const EntM1MHT = (M1MH||0)*5_000_000;
-        // M1T : 5M/j Métal, 2.5M/j Tritium
-        const EntM1TM  = (M1T ||0)*5_000_000;
-        const EntM1TT  = (M1T ||0)*2_500_000;
-        // M1TH : 10M/j Métal, 5M/j Tritium
-        const EntM1THM = (M1TH||0)*10_000_000;
-        const EntM1THT = (M1TH||0)*5_000_000;
+        const EntM1MM  = (M1M ||0)*10_000_000; // M1M : 10M/j Métal
+        const EntM1MT  = (M1M ||0)*5_000_000;  // M1M : 5M/j Tritium
+        const EntM1MHM = (M1MH||0)*10_000_000; // M1MH : 10M/j Métal
+        const EntM1MHT = (M1MH||0)*5_000_000;  // M1MH : 5M/j Tritium
+        const EntM1TM  = (M1T ||0)*5_000_000;  // M1T : 5M/j Métal
+        const EntM1TT  = (M1T ||0)*2_500_000;  // M1T : 2.5M/j Tritium
+        const EntM1THM = (M1TH||0)*10_000_000; // M1TH : 10M/j Métal
+        const EntM1THT = (M1TH||0)*5_000_000;  // M1TH : 5M/j Tritium
 
         // totaux d’entretien (/j)
         const EntretienM = EntM1M + EntM4M + EntM1MM + EntM1MHM + EntM1TM + EntM1THM;
@@ -96,17 +94,21 @@
             IMG: o.IMG ? String(o.IMG) : '',
             Adresse: o.Adresse||'',
             ID: o.ID ? String(o.ID) : '',
-            Type: o.Type||'',
+            // Type affiché : si "Rien" et AIA>0 => "AIA", sinon valeur d'origine
+            Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
             ProdM, ProdT, ProdP,
             ResM, ResT, ResP,
 
             // modules
             M1, M4, M1M, M1MH, M1T, M1TH,
 
+            // AIA conservé si on souhaite l'exposer plus tard
+            AIA,
+
             // entretiens (groupes & détails)
             EntretienM, EntretienT,
-            EntM1M, EntM1T, EntM4M, EntM4T, // existants
-            EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT, // nouveaux
+            EntM1M, EntM1T, EntM4M, EntM4T,
+            EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
 
             // rentabilité
             RentaM, RentaT
@@ -138,8 +140,7 @@
   .sx-colmenu{
     position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
     padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
-    /* scrollbar pour les colonnes */
-    max-height:70vh; overflow-y:auto;
+    max-height:70vh; overflow-y:auto; /* scrollbar pour les colonnes */
   }
   .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
@@ -199,7 +200,8 @@
 
     const btnCsv = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.textContent='📥 Export CSV';
     const btnCols = document.createElement('button'); btnCols.className='sx-btn'; btnCols.textContent='⚙ Colonnes';
-    rightEl.append(btnCsv, btnCols);
+    const btnDbg = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.textContent='🐞 Debug';
+    rightEl.append(btnCsv, btnCols, btnDbg);
     controlsEl.append(leftEl, rightEl);
 
     // ---- colonnes (ordre & visibilité) ----
@@ -210,7 +212,6 @@
 
         {label:'Prod.', key:'ProdGroup', show:true},
 
-        // détaillées APRÈS "Prod." (cachées par défaut)
         {label:'Prod Metal', key:'ProdM', show:false},
         {label:'Prod Tritium', key:'ProdT', show:false},
         {label:'Prod PhotoP', key:'ProdP', show:false},
@@ -220,10 +221,8 @@
 
         {label:'Stock', key:'StockGroup', show:true},
 
-        // ---- Nouvelle colonne groupe "Modules" ----
         {label:'Modules', key:'ModulesGroup', show:true},
 
-        // Colonnes individuelles des modules (cachées)
         {label:'Mod. Minier', key:'M1', show:false},
         {label:'Concent.', key:'M4', show:false},
         {label:'Extract. Télurique', key:'M1M', show:false},
@@ -231,19 +230,16 @@
         {label:'Extr. Jovien', key:'M1T', show:false},
         {label:'Raf. Mobile', key:'M1TH', show:false},
 
-        // duplicats pour export (cachés)
         {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
         {label:'Concent. (ind)', key:'M4_ind', show:false},
 
         {label:'Entretien', key:'EntGroup', show:true},
 
-        // Détails d’entretien existants (cachés)
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
         {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
         {label:'Entr. Concent. métal', key:'EntM4M', show:false},
         {label:'Entr. Concent. Tritium', key:'EntM4T', show:false},
 
-        // Détails d’entretien nouveaux (cachés)
         {label:'Entr. Extract. Télurique métal', key:'EntM1MM', show:false},
         {label:'Entr. Extract. Télurique Tritium', key:'EntM1MT', show:false},
         {label:'Entr. Col. Minière métal', key:'EntM1MHM', show:false},
@@ -272,7 +268,6 @@
         let top = r.bottom + 8;
         let left = r.left;
         colMenuEl.style.display = 'flex';
-        // bornage du menu dans le viewport (après affichage pour avoir sa taille)
         const mr = colMenuEl.getBoundingClientRect();
         if (left + mr.width > window.innerWidth - 8) left = window.innerWidth - mr.width - 8;
         if (top + mr.height > window.innerHeight - 8) top = window.innerHeight - mr.height - 8;
@@ -283,7 +278,7 @@
     };
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
-    // ---- table (UNE SEULE DÉCLARATION) ----
+    // ---- table ----
     const tableEl = document.createElement('table'); tableEl.className='sx-table';
     const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
     headers.forEach(h=>{ const th=document.createElement('th'); th.textContent=h.label; trh.appendChild(th); });
@@ -337,8 +332,6 @@
               <div><img src="${icon.T}" width="14"> ${abbr(r.ResT)}</div>
               <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
                         break;
-
-                    // ---- Groupe "Modules" (affichage vertical propre) ----
                     case 'ModulesGroup': {
                         let html = '';
                         if (r.M1)   html += `<div>Mod. Minier: <b>${abbr(r.M1)}</b></div>`;
@@ -350,7 +343,6 @@
                         td.innerHTML = html;
                         break;
                     }
-
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -378,7 +370,7 @@
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // Détails d’entretien (cachés mais exportables)
+                    // Détails d’entretien
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
@@ -454,13 +446,45 @@
         a.download='secteurs.csv'; a.click(); URL.revokeObjectURL(a.href);
     }
 
+    // ---- Export JSON brut de window.Secteurs ----
+    function exportJSON(){
+        try{
+            const src = window.Secteurs ?? {};
+            const out = {};
+            Reflect.ownKeys(src).forEach(k => {
+                try{
+                    const v = src[k];
+                    if (v && typeof v === 'object') {
+                        const o = {};
+                        for (const kk in v) {
+                            const val = v[kk];
+                            if (typeof val !== 'function') o[kk] = val;
+                        }
+                        out[k] = o;
+                    } else if (typeof v !== 'function') {
+                        out[k] = v;
+                    }
+                } catch(e){ /* ignore clé problématique */ }
+            });
+
+            const rawJson = JSON.stringify(out, null, 2);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([rawJson], {type:'application/json'}));
+            a.download = 'secteurs_raw.json';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch(e){
+            alert('Dump brut impossible : ' + (e && e.message ? e.message : e));
+        }
+    }
+
     // ---- mount ----
-    bodyEl.append(widgetsEl, controlsEl, tableEl);   // <— .sx-body porte l’overflow:auto
+    bodyEl.append(widgetsEl, controlsEl, tableEl);
     winEl.append(headEl, bodyEl);
     document.body.appendChild(winEl);
 
     // ---------- Bornage fenêtre (anti-dépassement) ----------
-    const MARGIN = 8; // marge visible minimale
+    const MARGIN = 8;
     function clampPos(left, top) {
         const w = winEl.offsetWidth;
         const h = winEl.offsetHeight;
@@ -495,6 +519,7 @@
     fM.onchange = render; fT.onchange = render;
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
+    btnDbg.onclick  = exportJSON;
     document.addEventListener('click',(ev)=>{ if(!colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu(); });
 
     // draggable (hors inputs/boutons) + bornage
@@ -517,7 +542,6 @@
     });
     document.addEventListener('mouseup',()=>drag=false);
 
-    // anti-dépassement pendant/after resize
     if (window.ResizeObserver) {
         const ro = new ResizeObserver(() => clampSize());
         ro.observe(winEl);
