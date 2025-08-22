@@ -21,6 +21,7 @@
         const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
         return `${sign}${val}${units[u]}`;
     };
+    const pct = x => `${Math.round((x||0)*1000)/10}%`; // 1 décimale
     const withUnit = (key, v) => {
         const s = abbr(v);
         if (!s) return '';
@@ -39,7 +40,7 @@
     };
     const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
-    // Temps relatif "il y a …" pour la colonne Dernière récolte
+    // Dernière récolte (localStorage)
     const lsKey = id => `secteur_recolte_${id}`;
     function timeAgoLabel(ts){
         const t = Number(ts);
@@ -55,7 +56,7 @@
         return `il y a ${d}j`;
     }
 
-    // ------- Définitions de vaisseaux (toujours window.Vaisseaux) -------
+    // Définitions de vaisseaux (toujours window.Vaisseaux)
     const SHIP_DEFS = (() => {
         const defs = new Map();
         const src = window.Vaisseaux || {};
@@ -72,6 +73,7 @@
         } catch {}
         return defs;
     })();
+    // Codes modules (à exclure de "Flotte" Secteurs mais INCLUS dans "Flottes" AIA)
     const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
     // ---------- Lire Secteurs ----------
@@ -88,11 +90,9 @@
         const ResT  = toNum(o.ResT);
         const ResP  = toNum(o.ResP);
 
-        // Modules existants
+        // Modules
         const M1    = toNum(o.M1);
         const M4    = toNum(o.M4);
-
-        // Nouveaux modules
         const M1M   = toNum(o.M1M);
         const M1MH  = toNum(o.M1MH);
         const M1T   = toNum(o.M1T);
@@ -101,7 +101,7 @@
         // AIA
         const AIA   = toNum(o.AIA);
 
-        // coûts d’entretien
+        // Entretiens "existants" (par jour)
         const EntM1M = (M1||0)*10000;
         const EntM1T = (M1||0)*5000;
         const EntM4M = (M4||0)*20000;
@@ -122,7 +122,7 @@
         const RentaM = (ProdM||0)*24 - EntretienM;
         const RentaT = (ProdT||0)*24 - EntretienT;
 
-        // -------- Flotte (hors modules) --------
+        // Flotte (hors modules) pour l’onglet Secteurs
         let FleetTotal = 0;
         const FleetBreakdown = [];
         if (SHIP_DEFS.size){
@@ -130,7 +130,7 @@
                 const n = toNum(val);
                 if (!n) return;
                 const c = String(code);
-                if (MODULE_CODES.has(c)) return;
+                if (MODULE_CODES.has(c)) return;       // exclu ici
                 if (!SHIP_DEFS.has(c)) return;
                 FleetTotal += n;
                 const def = SHIP_DEFS.get(c) || {};
@@ -139,6 +139,38 @@
             });
             FleetBreakdown.sort((a,b)=>b.qty-a.qty);
         }
+
+        // Flottes AIA (incluant modules)
+        let FleetTotalAIA = 0;
+        const FleetBreakdownAIA = [];
+        if (SHIP_DEFS.size){
+            Object.entries(o).forEach(([code, val])=>{
+                const n = toNum(val);
+                if (!n) return;
+                const c = String(code);
+                if (!SHIP_DEFS.has(c)) return;
+                FleetTotalAIA += n;
+                const def = SHIP_DEFS.get(c) || {};
+                const name = def.Nom || def.NomC || def.NomCourt || c;
+                FleetBreakdownAIA.push({ name, qty:n, code:c });
+            });
+            FleetBreakdownAIA.sort((a,b)=>b.qty-a.qty);
+        }
+
+        // Entretien "base" de TOUTE la flotte (pour AIA) via CoutM, ConsoMult
+        function perShipMaintM(def){ // métal par unité
+            const CoutM = Number(def.CoutM||0);
+            const ConsoMult = Number(def.ConsoMult||1);
+            return Math.floor(CoutM * 0.05 * ConsoMult);
+        }
+        let BaseM = 0, BaseT = 0;
+        FleetBreakdownAIA.forEach(it=>{
+            const def = SHIP_DEFS.get(it.code) || {};
+            const mUnit = perShipMaintM(def);
+            const tUnit = Math.floor(0.5 * mUnit);
+            BaseM += mUnit * it.qty;
+            BaseT += tUnit * it.qty;
+        });
 
         rows.push({
             IMG: o.IMG ? String(o.IMG) : '',
@@ -149,11 +181,16 @@
             ResM, ResT, ResP,
             M1, M4, M1M, M1MH, M1T, M1TH,
             AIA,
+
             EntretienM, EntretienT,
             EntM1M, EntM1T, EntM4M, EntM4T,
             EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
+
             RentaM, RentaT,
-            FleetTotal, FleetBreakdown
+
+            FleetTotal, FleetBreakdown,                 // Secteurs
+            FleetTotalAIA, FleetBreakdownAIA,           // AIA
+            BaseM, BaseT                                 // Entretien base (flotte complète)
         });
     });
 
@@ -165,6 +202,10 @@
   .sx-close{cursor:pointer;padding:2px 8px;border-radius:8px;background:#222b44}
   .sx-close:hover{background:#2a3454}
   .sx-body{flex:1;overflow:auto;padding:14px}
+
+  .sx-tabs{display:flex;gap:8px;margin:4px 0 10px}
+  .sx-tab{padding:6px 10px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
+  .sx-tab.active{background:#27406e}
 
   .sx-widgets{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
   .sx-card{background:#151c2f;border:1px solid #263251;border-radius:10px;padding:10px}
@@ -215,21 +256,25 @@
     // Tooltip element
     const tipEl = document.createElement('div');
     tipEl.className = 'sx-tip';
-    tipEl.innerHTML = `<h4>Flotte présente</h4><div class="sx-tip-list"></div>`;
+    tipEl.innerHTML = `<h4>Détails</h4><div class="sx-tip-list"></div>`;
     document.body.appendChild(tipEl);
     const tipList = tipEl.querySelector('.sx-tip-list');
     function showTip(html, x, y){
         tipList.innerHTML = html;
         tipEl.style.display = 'block';
-        // Position clamped to viewport
         const r = tipEl.getBoundingClientRect();
         let left = x + 12, top = y + 12;
         if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
         if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
-        tipEl.style.left = `${left}px`;
-        tipEl.style.top  = `${top}px`;
+        tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
     }
     function hideTip(){ tipEl.style.display = 'none'; }
+
+    // ---- Onglets ----
+    const tabsEl = document.createElement('div'); tabsEl.className='sx-tabs';
+    const tabSectors = document.createElement('button'); tabSectors.className='sx-tab active'; tabSectors.textContent='Secteurs';
+    const tabAIA     = document.createElement('button'); tabAIA.className='sx-tab'; tabAIA.textContent='AIA';
+    tabsEl.append(tabSectors, tabAIA);
 
     // ---- widgets ----
     const widgetsEl = document.createElement('div'); widgetsEl.className='sx-widgets';
@@ -275,22 +320,19 @@
     rightEl.append(btnRefresh, btnCsv, btnCols, btnDbg);
     controlsEl.append(leftEl, rightEl);
 
-    // ---- colonnes (ordre & visibilité) ----
+    // ---- colonnes (Secteurs) ----
     const headers = [
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
         {label:'Type', key:'Type', show:true},
-
         {label:'Prod.', key:'ProdGroup', show:true},
         {label:'Prod Metal', key:'ProdM', show:false},
         {label:'Prod Tritium', key:'ProdT', show:false},
         {label:'Prod PhotoP', key:'ProdP', show:false},
-
         {label:'Stock', key:'StockGroup', show:true},
         {label:'Metal', key:'ResM', show:false},
         {label:'Tritium', key:'ResT', show:false},
         {label:'PhotoP', key:'ResP', show:false},
-
         {label:'Modules', key:'ModulesGroup', show:true},
         {label:'Mod. Minier', key:'M1', show:false},
         {label:'Concent.', key:'M4', show:false},
@@ -298,13 +340,9 @@
         {label:'Col. Minière', key:'M1MH', show:false},
         {label:'Extr. Jovien', key:'M1T', show:false},
         {label:'Raf. Mobile', key:'M1TH', show:false},
-
         {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
         {label:'Concent. (ind)', key:'M4_ind', show:false},
-
-        // NOUVELLE COLONNE
         {label:'Flotte', key:'Flotte', show:true},
-
         {label:'Entretien', key:'EntGroup', show:true},
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
         {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
@@ -318,40 +356,55 @@
         {label:'Entr. Extr. Jovien Tritium', key:'EntM1TT', show:false},
         {label:'Entr. Raf. Mobile métal', key:'EntM1THM', show:false},
         {label:'Entr. Raf. Mobile Tritium', key:'EntM1THT', show:false},
-
         {label:'Renta', key:'RentaGroup', show:true},
         {label:'Dernière récolte', key:'LastHarvest', show:true},
         {label:'Action', key:'Action', show:true},
     ];
 
-    // ---- menu colonnes (flottant) ----
+    // ---- colonnes (AIA) ----
+    const headersAIA = [
+        {label:'', key:'IMG', show:true},
+        {label:'Adresse', key:'Adresse', show:true},
+        {label:'Niveau', key:'AIA_lvl', show:true},
+        {label:"Entre. Max", key:'AIA_ent', show:true},
+        {label:"Bonus", key:'AIA_bonus', show:true},
+        {label:'Stocks', key:'AIA_stock', show:true},
+        {label:'Flottes', key:'AIA_fleet', show:true},
+        {label:'Entr. Base', key:'AIA_base', show:true},
+        {label:'Entr. Déduit', key:'AIA_deduct', show:true},
+        {label:'Entr.', key:'AIA_rest', show:true},
+        {label:'Entr. Dispo', key:'AIA_free', show:true},
+        {label:'Charge', key:'AIA_load', show:true},
+        {label:'Action', key:'Action', show:true},
+    ];
+
+    // ---- menu colonnes (selon onglet actif) ----
     const colMenuEl = document.createElement('div');
     colMenuEl.className='sx-colmenu';
     document.body.appendChild(colMenuEl);
-    const showColMenu = () => {
+    let activeTab = 'Secteurs';
+    function buildColMenu(){
+        const cols = activeTab === 'AIA' ? headersAIA : headers;
         colMenuEl.innerHTML = '';
-        headers.forEach(h=>{
+        cols.forEach(h=>{
             const lbl=document.createElement('label');
             const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=h.show;
-            cb.onchange=()=>{ h.show = cb.checked; render(); };
+            cb.onchange=()=>{ h.show = cb.checked; activeTab==='AIA'?renderAIA():renderSectors(); };
             lbl.append(cb, document.createTextNode(' '+(h.label||'Colonne')));
             colMenuEl.appendChild(lbl);
         });
         const r = btnCols.getBoundingClientRect();
-        let top = r.bottom + 8;
-        let left = r.left;
+        let top = r.bottom + 8, left = r.left;
         colMenuEl.style.display = 'flex';
         const mr = colMenuEl.getBoundingClientRect();
-        if (left + mr.width > window.innerWidth - 8) left = window.innerWidth - mr.width - 8;
-        if (top + mr.height > window.innerHeight - 8) top = window.innerHeight - mr.height - 8;
-        if (left < 8) left = 8;
-        if (top < 8) top = 8;
-        colMenuEl.style.left = left+'px';
-        colMenuEl.style.top = top+'px';
-    };
+        if (left + mr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - mr.width - 8);
+        if (top + mr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mr.height - 8);
+        colMenuEl.style.left = left+'px'; colMenuEl.style.top = top+'px';
+    }
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
-    // ---- table ----
+    // ---- tables ----
+    // Secteurs
     const tableEl = document.createElement('table'); tableEl.className='sx-table';
     const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
     headers.forEach(h=>{ const th=document.createElement('th'); th.textContent=h.label; trh.appendChild(th); });
@@ -359,14 +412,27 @@
     const tbodyEl = document.createElement('tbody');
     tableEl.append(theadEl, tbodyEl);
 
+    // AIA
+    const tableAIA = document.createElement('table'); tableAIA.className='sx-table'; tableAIA.style.display='none';
+    const theadA = document.createElement('thead'); const trhA = document.createElement('tr');
+    headersAIA.forEach(h=>{ const th=document.createElement('th'); th.textContent=h.label; trhA.appendChild(th); });
+    theadA.appendChild(trhA);
+    const tbodyA = document.createElement('tbody');
+    tableAIA.append(theadA, tbodyA);
+
     function applyHeaderVisibility(){
         Array.from(trh.children).forEach((th,i)=>{
             th.style.display = headers[i].show ? '' : 'none';
         });
     }
+    function applyHeaderVisibilityAIA(){
+        Array.from(trhA.children).forEach((th,i)=>{
+            th.style.display = headersAIA[i].show ? '' : 'none';
+        });
+    }
 
-    // ---- rendu ----
-    function render(){
+    // ---- render SECTEURS ----
+    function renderSectors(){
         applyHeaderVisibility();
         tbodyEl.innerHTML='';
         const q = (searchEl.value||'').trim().toLowerCase();
@@ -416,25 +482,15 @@
                         td.innerHTML = html;
                         break;
                     }
-
-                    // ---- Flotte (total + tooltip HTML) ----
                     case 'Flotte': {
                         const total = r.FleetTotal || 0;
-                        td.textContent = String(total);
-                        if (r.FleetBreakdown && r.FleetBreakdown.length){
-                            td.dataset.tipHtml = r.FleetBreakdown
-                                .map(it => `<div class="sx-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`)
-                                .join('');
-                            td.classList.add('sx-has-tip');
-                            td.style.cursor = 'help';
-                        } else {
-                            td.dataset.tipHtml = `<div class="sx-tip-item"><span>Aucun vaisseau</span><span>0</span></div>`;
-                            td.classList.add('sx-has-tip');
-                            td.style.cursor = 'help';
-                        }
+                        td.textContent = abbr(total);
+                        td.dataset.tipHtml = (r.FleetBreakdown && r.FleetBreakdown.length)
+                            ? r.FleetBreakdown.map(it => `<div class="sx-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`).join('')
+                            : `<div class="sx-tip-item"><span>Aucun vaisseau</span><span>0</span></div>`;
+                        td.classList.add('sx-has-tip'); td.style.cursor = 'help';
                         break;
                     }
-
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -445,7 +501,6 @@
               <div><img src="${icon.M}" width="14"> <span class="${r.RentaM>=0?'sx-green':'sx-red'}">${withUnit('RentaM',r.RentaM)}</span></div>
               <div><img src="${icon.T}" width="14"> <span class="${r.RentaT>=0?'sx-green':'sx-red'}">${withUnit('RentaT',r.RentaT)}</span></div>`;
                         break;
-
                     case 'LastHarvest': {
                         let label = 'N/A';
                         try {
@@ -455,8 +510,7 @@
                         td.textContent = label;
                         break;
                     }
-
-                    // simples (cachés par défaut)
+                    // simples
                     case 'ProdM': td.textContent = withUnit('ProdM', r.ProdM); break;
                     case 'ProdT': td.textContent = withUnit('ProdT', r.ProdT); break;
                     case 'ProdP': td.textContent = withUnit('ProdP', r.ProdP); break;
@@ -472,12 +526,11 @@
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // Détails d’entretien
+                    // entretiens détaillés cachés
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
                     case 'EntM4T':  td.textContent = withUnit('EntM4T',  r.EntM4T); break;
-
                     case 'EntM1MM': td.textContent = withUnit('EntM1MM', r.EntM1MM); break;
                     case 'EntM1MT': td.textContent = withUnit('EntM1MT', r.EntM1MT); break;
                     case 'EntM1MHM':td.textContent = withUnit('EntM1MHM',r.EntM1MHM); break;
@@ -502,8 +555,7 @@
               </a>`;
                         break;
                     }
-                    default:
-                        td.textContent = '';
+                    default: td.textContent = '';
                 }
                 tr.appendChild(td);
             });
@@ -511,12 +563,124 @@
         });
     }
 
-    // ---- Export CSV ----
+    // ---- AIA helpers ----
+    function computeAIA(level){
+        const lvl = Math.max(0, Number(level)||0);
+        const entM = 240_000_000 * Math.sqrt(lvl) * (10 / (Math.pow(lvl,0.75) + 10) + 0.25);
+        const entT = entM / 2;
+        const bonus = 0.13 * (1 - (0.5 * Math.pow(0.95, lvl)));
+        return { entM, entT, bonus };
+    }
+
+    // ---- render AIA ----
+    function renderAIA(){
+        applyHeaderVisibilityAIA();
+        tbodyA.innerHTML = '';
+        const onlyAIA = rows.filter(r => (r.AIA||0) > 0);
+        onlyAIA.forEach(r=>{
+            const tr = document.createElement('tr');
+            const cap = computeAIA(r.AIA||0);
+
+            // Entr. Base (toute flotte)
+            const baseM = r.BaseM||0, baseT = r.BaseT||0;
+            const maxDeductM = 0.9 * baseM;
+            const maxDeductT = 0.9 * baseT;
+            const deductM = Math.min(maxDeductM, cap.entM);
+            const deductT = Math.min(maxDeductT, cap.entT);
+            const restM = Math.max(0, baseM - deductM);
+            const restT = Math.max(0, baseT - deductT);
+            const freeM = Math.max(0, cap.entM - deductM);
+            const freeT = Math.max(0, cap.entT - deductT);
+
+            // Charge basée UNIQUEMENT sur le MÉTAL (corrigé)
+            const load = cap.entM > 0 ? (baseM / cap.entM) : 0;
+
+            headersAIA.forEach(h=>{
+                if(!h.show) return;
+                const td = document.createElement('td');
+                switch(h.key){
+                    case 'IMG':
+                        td.innerHTML = r.IMG ? `<img class="sx-thumb" src="${thumb(r.IMG)}" alt="">` : '';
+                        break;
+                    case 'Adresse':
+                        td.innerHTML = `<a href="../Programme/Planete.php?ID=${r.ID}&Serv=1" target="Programme">${r.Adresse}</a>`;
+                        break;
+                    case 'AIA_lvl':
+                        td.textContent = String(r.AIA ?? 0);
+                        break;
+                    case 'AIA_ent':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',cap.entM)}</div>
+              <div><img src="${icon.T}" width="14"> ${withUnit('EntretienT',cap.entT)}</div>`;
+                        break;
+                    case 'AIA_bonus':
+                        td.textContent = pct(cap.bonus);
+                        break;
+                    case 'AIA_stock':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${abbr(r.ResM)}</div>
+              <div><img src="${icon.T}" width="14"> ${abbr(r.ResT)}</div>
+              <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
+                        break;
+                    case 'AIA_fleet': {
+                        td.textContent = abbr(r.FleetTotalAIA||0);
+                        td.dataset.tipHtml = (r.FleetBreakdownAIA && r.FleetBreakdownAIA.length)
+                            ? r.FleetBreakdownAIA.map(it => `<div class="sx-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`).join('')
+                            : `<div class="sx-tip-item"><span>Aucune flotte</span><span>0</span></div>`;
+                        td.classList.add('sx-has-tip'); td.style.cursor = 'help';
+                        break;
+                    }
+                    case 'AIA_base':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',baseM)}</div>
+              <div><img src="${icon.T}" width="14"> ${withUnit('EntretienT',baseT)}</div>`;
+                        break;
+                    case 'AIA_deduct':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',deductM)}</div>
+              <div><img src="${icon.T}" width="14"> ${withUnit('EntretienT',deductT)}</div>`;
+                        break;
+                    case 'AIA_rest':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',restM)}</div>
+              <div><img src="${icon.T}" width="14"> ${withUnit('EntretienT',restT)}</div>`;
+                        break;
+                    case 'AIA_free':
+                        td.innerHTML = `
+              <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',freeM)}</div>
+              <div><img src="${icon.T}" width="14"> ${withUnit('EntretienT',freeT)}</div>`;
+                        break;
+                    case 'AIA_load':
+                        td.innerHTML = `<span class="${load>1?'sx-red':'sx-green'}">${pct(load)}</span>`;
+                        break;
+                    case 'Action': {
+                        const sid = (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : '';
+                        td.className='sx-actions';
+                        td.innerHTML = `
+              <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${sid}&IDCible=${r.ID}">
+                <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoFlotte.png" alt="">
+              </a>
+              <a target="Programme" title="Récolter" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=recolter&IDCible=${r.ID}">
+                <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoRecolter.png" alt="">
+              </a>
+              <a target="Programme" title="Ordinateur" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=ordinateur&IDCible=${r.ID}">
+                <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoOrdinateur.png" alt="">
+              </a>`;
+                        break;
+                    }
+                    default: td.textContent = '';
+                }
+                tr.appendChild(td);
+            });
+            tbodyA.appendChild(tr);
+        });
+    }
+
+    // ---- Export CSV (Secteurs) ----
     function exportCSV(){
         const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
         const headerLabels = headers.map(h=>h.label || '');
         const keys = headers.map(h=>h.key);
-
         const valueFor = (r, key) => {
             switch(key){
                 case 'IMG': return r.IMG;
@@ -552,10 +716,8 @@
                 default: return r[key];
             }
         };
-
         const lines = rows.map(r=> keys.map(k=>esc(valueFor(r,k))).join(';'));
         const csv = headerLabels.map(esc).join(';')+'\n'+lines.join('\n');
-
         const a=document.createElement('a');
         a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
         a.download='secteurs.csv'; a.click(); URL.revokeObjectURL(a.href);
@@ -579,9 +741,8 @@
                     } else if (typeof v !== 'function') {
                         out[k] = v;
                     }
-                } catch(e){ /* ignore clé problématique */ }
+                } catch(e){ }
             });
-
             const rawJson = JSON.stringify(out, null, 2);
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([rawJson], {type:'application/json'}));
@@ -594,21 +755,19 @@
     }
 
     // ---- mount ----
-    bodyEl.append(widgetsEl, controlsEl, tableEl);
+    bodyEl.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
     winEl.append(headEl, bodyEl);
     document.body.appendChild(winEl);
 
-    // ---------- Bornage fenêtre (anti-dépassement) ----------
+    // ---------- Bornage fenêtre ----------
     const MARGIN = 8;
     function clampPos(left, top) {
         const w = winEl.offsetWidth;
         const h = winEl.offsetHeight;
         const maxLeft = Math.max(MARGIN, window.innerWidth - w - MARGIN);
         const maxTop  = Math.max(MARGIN, window.innerHeight - h - MARGIN);
-        return {
-            left: Math.min(Math.max(left, MARGIN), maxLeft),
-            top:  Math.min(Math.max(top,  MARGIN), maxTop)
-        };
+        return { left: Math.min(Math.max(left, MARGIN), maxLeft),
+            top:  Math.min(Math.max(top,  MARGIN), maxTop) };
     }
     function clampSize() {
         const rect = winEl.getBoundingClientRect();
@@ -630,29 +789,32 @@
         try{ window.__secteursInspector=undefined; }catch{}
         winEl.remove(); styleEl.remove(); colMenuEl.remove(); tipEl.remove();
     };
-    btnRefresh.onclick = render;
+    btnRefresh.onclick = () => { renderSectors(); renderAIA(); };
     btnCsv.onclick = exportCSV;
-    btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
+    btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
     btnDbg.onclick  = exportJSON;
 
-    searchEl.oninput = render;
-    fM.onchange = render; fT.onchange = render;
+    searchEl.oninput = renderSectors;
+    fM.onchange = renderSectors; fT.onchange = renderSectors;
 
-    // Tooltip delegation on table (for Flotte cells)
-    tableEl.addEventListener('mousemove', (e)=>{
-        const td = e.target.closest('td.sx-has-tip');
-        if (!td || !tableEl.contains(td)) { hideTip(); return; }
-        const html = td.dataset.tipHtml || '';
-        if (!html) { hideTip(); return; }
-        showTip(html, e.clientX, e.clientY);
-    });
-    tableEl.addEventListener('mouseleave', hideTip);
+    // Tooltip delegation
+    function tipAttachFor(el){
+        el.addEventListener('mousemove', (e)=>{
+            const td = e.target.closest('td.sx-has-tip');
+            if (!td || !el.contains(td)) { hideTip(); return; }
+            const html = td.dataset.tipHtml || '';
+            if (!html) { hideTip(); return; }
+            showTip(html, e.clientX, e.clientY);
+        });
+        el.addEventListener('mouseleave', hideTip);
+    }
+    tipAttachFor(tableEl);
+    tipAttachFor(tableAIA);
     window.addEventListener('scroll', hideTip, true);
 
-    // Interception du clic Récolter : maj localStorage puis ouverture unique
+    // Interception "Récolter" (maj localStorage puis ouverture)
     document.addEventListener('click',(ev)=>{
         if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
-
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
@@ -662,13 +824,13 @@
                 const id = url.searchParams.get('IDCible');
                 if (id) localStorage.setItem(lsKey(id), String(Date.now()));
             }catch{}
-            render();
+            renderSectors();
             const target = a.getAttribute('target') || '_self';
             window.open(a.href, target);
         }
     }, true);
 
-    // drag + bornage
+    // Drag + bornage
     let drag=false, dx=0, dy=0;
     headEl.addEventListener('mousedown',e=>{
         if(e.target.closest('button, input, .sx-close')) return;
@@ -695,8 +857,24 @@
     winEl.addEventListener('mouseup', clampAll);
     window.addEventListener('resize', clampAll);
 
+    // Onglets (switch)
+    function activateTab(which){
+        activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
+        if (activeTab === 'AIA'){
+            tabSectors.classList.remove('active'); tabAIA.classList.add('active');
+            tableEl.style.display='none'; tableAIA.style.display='';
+        } else {
+            tabAIA.classList.remove('active'); tabSectors.classList.add('active');
+            tableAIA.style.display='none'; tableEl.style.display='';
+        }
+        hideTip();
+    }
+    tabSectors.onclick = () => activateTab('Secteurs');
+    tabAIA.onclick     = () => activateTab('AIA');
+
     // initial
-    render();
+    renderSectors();
+    renderAIA();
     requestAnimationFrame(clampAll);
 
     // API
