@@ -39,7 +39,7 @@
     };
     const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
-    // --- temps relatif pour "Dernière récolte" ---
+    // Temps relatif "il y a …" pour la colonne Dernière récolte
     const lsKey = id => `secteur_recolte_${id}`;
     function timeAgoLabel(ts){
         const t = Number(ts);
@@ -118,7 +118,7 @@
             // modules
             M1, M4, M1M, M1MH, M1T, M1TH,
 
-            // AIA conservé si on souhaite l'exposer plus tard
+            // AIA conservé si utile plus tard
             AIA,
 
             // entretiens (groupes & détails)
@@ -228,21 +228,16 @@
         {label:'Type', key:'Type', show:true},
 
         {label:'Prod.', key:'ProdGroup', show:true},
-
-        // détaillées APRÈS "Prod." (cachées par défaut)
         {label:'Prod Metal', key:'ProdM', show:false},
         {label:'Prod Tritium', key:'ProdT', show:false},
         {label:'Prod PhotoP', key:'ProdP', show:false},
+
+        {label:'Stock', key:'StockGroup', show:true},
         {label:'Metal', key:'ResM', show:false},
         {label:'Tritium', key:'ResT', show:false},
         {label:'PhotoP', key:'ResP', show:false},
 
-        {label:'Stock', key:'StockGroup', show:true},
-
-        // ---- Groupe "Modules" ----
         {label:'Modules', key:'ModulesGroup', show:true},
-
-        // Colonnes individuelles des modules (cachées)
         {label:'Mod. Minier', key:'M1', show:false},
         {label:'Concent.', key:'M4', show:false},
         {label:'Extract. Télurique', key:'M1M', show:false},
@@ -250,19 +245,14 @@
         {label:'Extr. Jovien', key:'M1T', show:false},
         {label:'Raf. Mobile', key:'M1TH', show:false},
 
-        // duplicats pour export (cachés)
         {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
         {label:'Concent. (ind)', key:'M4_ind', show:false},
 
         {label:'Entretien', key:'EntGroup', show:true},
-
-        // Détails d’entretien existants (cachés)
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
         {label:'Entr. Mod. Minier Tritium', key:'EntM1T', show:false},
         {label:'Entr. Concent. métal', key:'EntM4M', show:false},
         {label:'Entr. Concent. Tritium', key:'EntM4T', show:false},
-
-        // Détails d’entretien nouveaux (cachés)
         {label:'Entr. Extract. Télurique métal', key:'EntM1MM', show:false},
         {label:'Entr. Extract. Télurique Tritium', key:'EntM1MT', show:false},
         {label:'Entr. Col. Minière métal', key:'EntM1MHM', show:false},
@@ -281,7 +271,9 @@
     ];
 
     // ---- menu colonnes (flottant) ----
-    const colMenuEl = document.createElement('div'); colMenuEl.className='sx-colmenu'; document.body.appendChild(colMenuEl);
+    const colMenuEl = document.createElement('div');
+    colMenuEl.className='sx-colmenu';
+    document.body.appendChild(colMenuEl);
     const showColMenu = () => {
         colMenuEl.innerHTML = '';
         headers.forEach(h=>{
@@ -359,8 +351,6 @@
               <div><img src="${icon.T}" width="14"> ${abbr(r.ResT)}</div>
               <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
                         break;
-
-                    // ---- Groupe "Modules" ----
                     case 'ModulesGroup': {
                         let html = '';
                         if (r.M1)   html += `<div>Mod. Minier: <b>${abbr(r.M1)}</b></div>`;
@@ -372,7 +362,6 @@
                         td.innerHTML = html;
                         break;
                     }
-
                     case 'EntGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('EntretienM',r.EntretienM)}</div>
@@ -386,14 +375,11 @@
 
                     // ---- Dernière récolte ----
                     case 'LastHarvest': {
-                        const id = r.ID;
                         let label = 'N/A';
-                        if (id) {
-                            try {
-                                const ts = localStorage.getItem(lsKey(id));
-                                label = ts ? timeAgoLabel(ts) : 'N/A';
-                            } catch {}
-                        }
+                        try {
+                            const ts = localStorage.getItem(lsKey(r.ID));
+                            label = ts ? timeAgoLabel(ts) : 'N/A';
+                        } catch {}
                         td.textContent = label;
                         break;
                     }
@@ -477,12 +463,12 @@
                 case 'EntGroup': return `M:${r.EntretienM||0}/j | T:${r.EntretienT||0}/j`;
                 case 'RentaGroup': return `M:${r.RentaM||0}/j | T:${r.RentaT||0}/j`;
                 case 'LastHarvest': {
-                    const id = r.ID;
-                    if (!id) return 'N/A';
+                    let label = 'N/A';
                     try {
-                        const ts = localStorage.getItem(lsKey(id));
-                        return ts ? timeAgoLabel(ts) : 'N/A';
-                    } catch { return 'N/A'; }
+                        const ts = localStorage.getItem(lsKey(r.ID));
+                        label = ts ? timeAgoLabel(ts) : 'N/A';
+                    } catch {}
+                    return label;
                 }
                 case 'M1_ind': return r.M1;
                 case 'M4_ind': return r.M4;
@@ -562,25 +548,34 @@
         clampSize();
     }
 
-    // events
+    // ---------- events ----------
     headEl.querySelector('.sx-close').onclick=()=>{
         try{ window.__secteursInspector=undefined; }catch{}
         winEl.remove(); styleEl.remove(); colMenuEl.remove();
     };
-    searchEl.oninput = render;
-    fM.onchange = render; fT.onchange = render;
+    // boutons
     btnRefresh.onclick = render;
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else showColMenu(); };
     btnDbg.onclick  = exportJSON;
-    document.addEventListener('click',(ev)=>{
-        // fermer menu colonnes si clic ailleurs
-        if(!colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
 
-        // Intercepter clic sur "Récolter" pour enregistrer d'abord l'heure, puis suivre le lien
+    // filtres
+    const searchElInput = searchEl; // juste pour lisibilité
+    searchElInput.oninput = render;
+    fM.onchange = render; fT.onchange = render;
+
+    // Interception unique du clic Récolter (évite double mission)
+    document.addEventListener('click',(ev)=>{
+        // Fermer le menu colonnes si clic ailleurs
+        if (colMenuEl.style.display === 'flex' && !colMenuEl.contains(ev.target) && ev.target !== btnCols) {
+            hideColMenu();
+        }
+
+        // Clic sur "Récolter" dans notre tableau
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
+            ev.stopPropagation();
             try{
                 const url = new URL(a.href, location.href);
                 const id = url.searchParams.get('IDCible');
@@ -588,13 +583,13 @@
             }catch{}
             // refresh local (affichera "il y a 0s")
             render();
-            // puis ouvrir le lien (respecte le target du <a>)
+            // puis ouvrir le lien (respecte le target du <a>), une seule fois
             const target = a.getAttribute('target') || '_self';
             window.open(a.href, target);
         }
-    });
+    }, true); // capture: true
 
-    // draggable (hors inputs/boutons) + bornage
+    // drag + bornage
     let drag=false, dx=0, dy=0;
     headEl.addEventListener('mousedown',e=>{
         if(e.target.closest('button, input, .sx-close')) return;
@@ -622,7 +617,6 @@
     window.addEventListener('resize', clampAll);
 
     // initial
-    // widgets doivent être remplis après les totaux; c'est déjà fait plus haut
     render();
     requestAnimationFrame(clampAll);
 
