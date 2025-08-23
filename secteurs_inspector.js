@@ -1,4 +1,5 @@
 (() => {
+    // --- anti-double-injection
     if (window.__secteursInspector && typeof window.__secteursInspector.open === 'function') {
         window.__secteursInspector.open();
         return;
@@ -174,18 +175,23 @@
         });
 
         rows.push({
+            RowKey: k, // on garde la clé exacte pour RemplirChampsPlanete
             IMG: o.IMG ? String(o.IMG) : '',
             Adresse: o.Adresse||'',
             ID: o.ID ? String(o.ID) : '',
             Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
             ProdM, ProdT, ProdP,
             ResM, ResT, ResP,
+            // modules
             M1, M4, M1M, M1MH, M1T, M1TH,
             AIA,
+            // entretiens
             EntretienM, EntretienT,
             EntM1M, EntM1T, EntM4M, EntM4T,
             EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
+            // rentabilité
             RentaM, RentaT,
+            // flottes
             FleetTotal, FleetBreakdown,
             FleetTotalAIA, FleetBreakdownAIA,
             BaseM, BaseT
@@ -195,10 +201,12 @@
     // ---------- UI ----------
     const css = `
   .sx-win{position:fixed;top:40px;left:40px;width:1280px;height:650px;background:#0f1422;color:#eaeefc;font:14px/1.35 system-ui,Segoe UI,Arial;z-index:2147483000;border:1px solid #263251;border-radius:12px;display:flex;flex-direction:column;resize:both;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45)}
-  .sx-head{background:#151c2f;padding:10px 12px;cursor:move;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263251}
+  .sx-head{background:#151c2f;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263251}
   .sx-title{font-weight:700;letter-spacing:.3px}
-  .sx-close{cursor:pointer;padding:2px 8px;border-radius:8px;background:#222b44}
-  .sx-close:hover{background:#2a3454}
+  .sx-head-actions{display:flex;gap:8px;align-items:center}
+  .sx-iconbtn{width:28px;height:28px;border-radius:8px;background:#222b44;border:1px solid #2a365a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .sx-iconbtn:hover{background:#2a365a}
+  .sx-iconbtn svg{width:16px;height:16px;stroke:#fff}
   .sx-body{flex:1;overflow:auto;padding:14px}
 
   .sx-tabs{display:flex;gap:8px;margin:4px 0 10px}
@@ -251,12 +259,24 @@
   .sx-filon.ok{color:#53e08f}      /* >= 0.90 */
   .sx-filon.warn{color:#f6c26b}    /* [0.80, 0.90) */
   .sx-filon.bad{color:#ff6b6b}     /* < 0.80 */
+
+  /* IMG + bouton Raccourci */
+  .sx-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
+  .sx-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
   `;
     const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
 
+    // --- fenêtre + en-tête (icônes blanches + réduire)
     const winEl = document.createElement('div'); winEl.className='sx-win';
     const headEl = document.createElement('div'); headEl.className='sx-head';
-    headEl.innerHTML = `<div class="sx-title">Secteurs Inspector</div><div class="sx-close">Fermer</div>`;
+    const titleEl = document.createElement('div'); titleEl.className='sx-title'; titleEl.textContent = 'Secteurs Inspector';
+    const headActions = document.createElement('div'); headActions.className='sx-head-actions';
+    const btnMin = document.createElement('button'); btnMin.className='sx-iconbtn'; btnMin.title='Réduire';
+    btnMin.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+    const btnClose = document.createElement('button'); btnClose.className='sx-iconbtn'; btnClose.title='Fermer';
+    btnClose.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
+    headActions.append(btnMin, btnClose);
+    headEl.append(titleEl, headActions);
     const bodyEl = document.createElement('div'); bodyEl.className='sx-body';
 
     // Tooltip element
@@ -457,9 +477,23 @@
                 if(!h.show) return;
                 const td=document.createElement('td');
                 switch(h.key){
-                    case 'IMG':
-                        td.innerHTML = r.IMG ? `<img class="sx-thumb" src="${thumb(r.IMG)}" alt="">` : '';
+                    case 'IMG': {
+                        // lien "raccourci secteur" collé à l'image planète (même colonne)
+                        const wrap = document.createElement('div'); wrap.className='sx-imgwrap';
+                        const aRac = document.createElement('a');
+                        aRac.className = 'sx-rac';
+                        aRac.href = `javascript:try{RemplirChampsPlanete('racourcis_secteurs','${String(r.RowKey).replace(/'/g,"\\'")}')}catch(e){console.error('Raccourci secteur : erreur ignorée',e)}`;
+                        aRac.title = 'Raccourci secteur';
+                        wrap.appendChild(aRac);
+                        if (r.IMG) {
+                            const im = document.createElement('img');
+                            im.className='sx-thumb';
+                            im.src = thumb(r.IMG);
+                            wrap.appendChild(im);
+                        }
+                        td.appendChild(wrap);
                         break;
+                    }
                     case 'Adresse':
                         td.innerHTML = `<a href="../Programme/Planete.php?ID=${r.ID}&Serv=1" target="Programme">${r.Adresse}</a>`;
                         break;
@@ -618,9 +652,22 @@
                 if(!h.show) return;
                 const td = document.createElement('td');
                 switch(h.key){
-                    case 'IMG':
-                        td.innerHTML = r.IMG ? `<img class="sx-thumb" src="${thumb(r.IMG)}" alt="">` : '';
+                    case 'IMG': {
+                        const wrap = document.createElement('div'); wrap.className='sx-imgwrap';
+                        const aRac = document.createElement('a');
+                        aRac.className = 'sx-rac';
+                        aRac.href = `javascript:try{RemplirChampsPlanete('racourcis_secteurs','${String(r.RowKey).replace(/'/g,"\\'")}')}catch(e){console.error('Raccourci secteur : erreur ignorée',e)}`;
+                        aRac.title = 'Raccourci secteur';
+                        wrap.appendChild(aRac);
+                        if (r.IMG) {
+                            const im = document.createElement('img');
+                            im.className='sx-thumb';
+                            im.src = thumb(r.IMG);
+                            wrap.appendChild(im);
+                        }
+                        td.appendChild(wrap);
                         break;
+                    }
                     case 'Adresse':
                         td.innerHTML = `<a href="../Programme/Planete.php?ID=${r.ID}&Serv=1" target="Programme">${r.Adresse}</a>`;
                         break;
@@ -695,11 +742,12 @@
         });
     }
 
-    // ---- Export CSV (Secteurs) ----
+    // ---- Export CSV (toutes colonnes, même masquées) ----
     function exportCSV(){
         const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
         const headerLabels = headers.map(h=>h.label || '');
         const keys = headers.map(h=>h.key);
+
         const valueFor = (r, key) => {
             switch(key){
                 case 'IMG': return r.IMG;
@@ -735,8 +783,10 @@
                 default: return r[key];
             }
         };
+
         const lines = rows.map(r=> keys.map(k=>esc(valueFor(r,k))).join(';'));
         const csv = headerLabels.map(esc).join(';')+'\n'+lines.join('\n');
+
         const a=document.createElement('a');
         a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
         a.download='secteurs.csv'; a.click(); URL.revokeObjectURL(a.href);
@@ -769,18 +819,12 @@
             a.click();
             URL.revokeObjectURL(a.href);
         } catch(e){
-            alert('Dump brut impossible : ' + (e && e.message ? e.message : e));
+            console.error('Dump brut impossible : ', e);
         }
     }
 
     // ---- mount ----
-    const tabsWrap = document.createDocumentFragment();
-    tabsWrap.appendChild(tabsEl);
-    bodyEl.append(tabsWrap, widgetsEl, controlsEl);
-
-    bodyEl.appendChild(tableEl);
-    bodyEl.appendChild(tableAIA);
-
+    bodyEl.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
     winEl.append(headEl, bodyEl);
     document.body.appendChild(winEl);
 
@@ -810,15 +854,46 @@
     }
 
     // ---------- events ----------
-    headEl.querySelector('.sx-close').onclick=()=>{
+    // fermer
+    btnClose.onclick=()=>{
         try{ window.__secteursInspector=undefined; }catch{}
         winEl.remove(); styleEl.remove(); colMenuEl.remove(); tipEl.remove();
     };
+
+    // réduire / restaurer
+    let minimized = false;
+    const orig = { width: '', height: '', left: '', top: '' };
+    function minimizeWindow(){
+        if (minimized) return;
+        const r = winEl.getBoundingClientRect();
+        orig.width = winEl.style.width; orig.height = winEl.style.height;
+        orig.left = winEl.style.left; orig.top = winEl.style.top;
+        winEl.style.width = '300px';
+        winEl.style.height = '44px';
+        winEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
+        winEl.style.top  = Math.max(8, Math.min(r.top,  window.innerHeight - 52)) + 'px';
+        bodyEl.style.display='none';
+        minimized = true;
+    }
+    function restoreWindow(){
+        if (!minimized) return;
+        winEl.style.width = orig.width || '';
+        winEl.style.height = orig.height || '';
+        winEl.style.left = orig.left || '40px';
+        winEl.style.top = orig.top || '40px';
+        bodyEl.style.display='';
+        minimized = false;
+        clampAll();
+    }
+    btnMin.onclick = ()=>{ minimized ? restoreWindow() : minimizeWindow(); };
+
+    // UI
     btnRefresh.onclick = () => { renderSectors(); renderAIA(); };
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
     btnDbg.onclick  = exportJSON;
 
+    // recherche / filtres
     searchEl.oninput = renderSectors;
     fM.onchange = renderSectors; fT.onchange = renderSectors;
 
@@ -883,7 +958,7 @@
     // Drag + bornage
     let drag=false, dx=0, dy=0;
     headEl.addEventListener('mousedown',e=>{
-        if(e.target.closest('button, input, .sx-close')) return;
+        if(e.target.closest('button, input')) return;
         drag=true;
         const rect = winEl.getBoundingClientRect();
         dx = e.clientX - rect.left;
@@ -923,11 +998,18 @@
     tabAIA.onclick     = () => activateTab('AIA');
 
     // initial
-    bodyEl.prepend(tabsEl);
+    const tabsWrap = document.createDocumentFragment();
+    tabsWrap.appendChild(tabsEl);
+    const container = document.createDocumentFragment();
+    container.append(tabsWrap, widgetsEl, controlsEl, tableEl, tableAIA);
+    bodyEl.append(container);
+
     renderSectors();
     renderAIA();
     requestAnimationFrame(clampAll);
 
     // API
-    window.__secteursInspector = { open(){ winEl.style.display='flex'; clampAll(); } };
+    window.__secteursInspector = {
+        open(){ winEl.style.display='flex'; /* restaure si minifié */ restoreWindow(); clampAll(); }
+    };
 })();
