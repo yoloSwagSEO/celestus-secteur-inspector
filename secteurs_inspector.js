@@ -21,7 +21,7 @@
         const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
         return `${sign}${val}${units[u]}`;
     };
-    const pct = x => `${Math.round((x||0)*1000)/10}%`; // 1 décimale
+    const pct = x => `${Math.round((x||0)*1000)/10}%`;
     const withUnit = (key, v) => {
         const s = abbr(v);
         if (!s) return '';
@@ -41,7 +41,7 @@
     const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
     // Dernière récolte (localStorage)
-    const lsKey = id => `secteur_recolte_${id}`;
+    const harvestKey = id => `secteur_recolte_${id}`;
     function timeAgoLabel(ts){
         const t = Number(ts);
         if (!Number.isFinite(t)) return 'N/A';
@@ -56,24 +56,27 @@
         return `il y a ${d}j`;
     }
 
-    // Définitions de vaisseaux (toujours window.Vaisseaux)
+    // FILON (localStorage)
+    const filonKey = id => `filon_${id}`;
+    const getFilonLS = (id) => {
+        try { const v = localStorage.getItem(filonKey(id)); return v==null?null:toNum(v); } catch { return null; }
+    };
+    const setFilonLS = (id, val) => {
+        try { localStorage.setItem(filonKey(id), String(val)); } catch {}
+    };
+
+    // Définitions vaisseaux (window.Vaisseaux)
     const SHIP_DEFS = (() => {
         const defs = new Map();
         const src = window.Vaisseaux || {};
         try {
             Reflect.ownKeys(src).forEach(k => {
-                try {
-                    const v = src[k];
-                    if (!v) return;
-                    const code = String((v.Code ?? k) || '');
-                    if (!code) return;
-                    defs.set(code, v);
-                } catch {}
+                try { const v = src[k]; const code = String((v?.Code ?? k) || ''); if (code) defs.set(code, v); } catch {}
             });
         } catch {}
         return defs;
     })();
-    // Codes modules (à exclure de "Flotte" Secteurs mais INCLUS dans "Flottes" AIA)
+    // Codes modules
     const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
     // ---------- Lire Secteurs ----------
@@ -101,7 +104,7 @@
         // AIA
         const AIA   = toNum(o.AIA);
 
-        // Entretiens "existants" (par jour)
+        // Entretiens (par jour)
         const EntM1M = (M1||0)*10000;
         const EntM1T = (M1||0)*5000;
         const EntM4M = (M4||0)*20000;
@@ -122,15 +125,14 @@
         const RentaM = (ProdM||0)*24 - EntretienM;
         const RentaT = (ProdT||0)*24 - EntretienT;
 
-        // Flotte (hors modules) pour l’onglet Secteurs
+        // Flotte (hors modules) – Secteurs
         let FleetTotal = 0;
         const FleetBreakdown = [];
         if (SHIP_DEFS.size){
             Object.entries(o).forEach(([code, val])=>{
-                const n = toNum(val);
-                if (!n) return;
+                const n = toNum(val); if (!n) return;
                 const c = String(code);
-                if (MODULE_CODES.has(c)) return;       // exclu ici
+                if (MODULE_CODES.has(c)) return;       // exclure modules ici
                 if (!SHIP_DEFS.has(c)) return;
                 FleetTotal += n;
                 const def = SHIP_DEFS.get(c) || {};
@@ -140,13 +142,12 @@
             FleetBreakdown.sort((a,b)=>b.qty-a.qty);
         }
 
-        // Flottes AIA (incluant modules)
+        // Flottes AIA (incl. modules)
         let FleetTotalAIA = 0;
         const FleetBreakdownAIA = [];
         if (SHIP_DEFS.size){
             Object.entries(o).forEach(([code, val])=>{
-                const n = toNum(val);
-                if (!n) return;
+                const n = toNum(val); if (!n) return;
                 const c = String(code);
                 if (!SHIP_DEFS.has(c)) return;
                 FleetTotalAIA += n;
@@ -157,10 +158,10 @@
             FleetBreakdownAIA.sort((a,b)=>b.qty-a.qty);
         }
 
-        // Entretien "base" de TOUTE la flotte (pour AIA) via CoutM, ConsoMult
-        function perShipMaintM(def){ // métal par unité
-            const CoutM = Number(def.CoutM||0);
-            const ConsoMult = Number(def.ConsoMult||1);
+        // Entretien base flotte (AIA)
+        function perShipMaintM(def){
+            const CoutM = Number(def?.CoutM||0);
+            const ConsoMult = Number(def?.ConsoMult||1);
             return Math.floor(CoutM * 0.05 * ConsoMult);
         }
         let BaseM = 0, BaseT = 0;
@@ -181,16 +182,13 @@
             ResM, ResT, ResP,
             M1, M4, M1M, M1MH, M1T, M1TH,
             AIA,
-
             EntretienM, EntretienT,
             EntM1M, EntM1T, EntM4M, EntM4T,
             EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
-
             RentaM, RentaT,
-
-            FleetTotal, FleetBreakdown,                 // Secteurs
-            FleetTotalAIA, FleetBreakdownAIA,           // AIA
-            BaseM, BaseT                                 // Entretien base (flotte complète)
+            FleetTotal, FleetBreakdown,
+            FleetTotalAIA, FleetBreakdownAIA,
+            BaseM, BaseT
         });
     });
 
@@ -220,6 +218,8 @@
   .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
   .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
   .sx-btn:hover{background:#1d2947}
+  .sx-mini-btn{padding:2px 6px;border-radius:8px;border:1px solid #2a365a;background:#1a2240;color:#eaeefc;cursor:pointer;margin-left:6px}
+  .sx-mini-btn:hover{background:#202a52}
 
   .sx-colmenu{
     position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
@@ -245,6 +245,12 @@
   .sx-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
   .sx-tip-item span:first-child{opacity:.9}
   .sx-tip-item span:last-child{font-weight:700}
+
+  /* Filon coloring */
+  .sx-filon{font-weight:700}
+  .sx-filon.ok{color:#53e08f}      /* >= 0.90 */
+  .sx-filon.warn{color:#f6c26b}    /* [0.80, 0.90) */
+  .sx-filon.bad{color:#ff6b6b}     /* < 0.80 */
   `;
     const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
 
@@ -325,6 +331,7 @@
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
         {label:'Type', key:'Type', show:true},
+        {label:'Filon', key:'Filon', show:true},
         {label:'Prod.', key:'ProdGroup', show:true},
         {label:'Prod Metal', key:'ProdM', show:false},
         {label:'Prod Tritium', key:'ProdT', show:false},
@@ -378,7 +385,7 @@
         {label:'Action', key:'Action', show:true},
     ];
 
-    // ---- menu colonnes (selon onglet actif) ----
+    // ---- menu colonnes ----
     const colMenuEl = document.createElement('div');
     colMenuEl.className='sx-colmenu';
     document.body.appendChild(colMenuEl);
@@ -459,6 +466,20 @@
                     case 'Type':
                         td.textContent = r.Type || '';
                         break;
+
+                    // ---- FILON ----
+                    case 'Filon': {
+                        const val = getFilonLS(r.ID);
+                        if (val !== null && Number.isFinite(val)) {
+                            const v = Math.round(val * 100) / 100; // 2 déc.
+                            const cls = (val >= 0.90) ? 'ok' : (val >= 0.80 ? 'warn' : 'bad');
+                            td.innerHTML = `<span class="sx-filon ${cls}">${v.toFixed(2)}</span>`;
+                        } else {
+                            td.innerHTML = `N/A <button class="sx-mini-btn sx-filon-refresh" data-id="${r.ID}" title="Récupérer depuis la planète courante">🔄</button>`;
+                        }
+                        break;
+                    }
+
                     case 'ProdGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${withUnit('ProdM',r.ProdM)}</div>
@@ -503,14 +524,12 @@
                         break;
                     case 'LastHarvest': {
                         let label = 'N/A';
-                        try {
-                            const ts = localStorage.getItem(lsKey(r.ID));
-                            label = ts ? timeAgoLabel(ts) : 'N/A';
-                        } catch {}
+                        try { const ts = localStorage.getItem(harvestKey(r.ID)); label = ts ? timeAgoLabel(ts) : 'N/A'; } catch {}
                         td.textContent = label;
                         break;
                     }
-                    // simples
+
+                    // simples (cachés)
                     case 'ProdM': td.textContent = withUnit('ProdM', r.ProdM); break;
                     case 'ProdT': td.textContent = withUnit('ProdT', r.ProdT); break;
                     case 'ProdP': td.textContent = withUnit('ProdP', r.ProdP); break;
@@ -526,7 +545,7 @@
                     case 'M1_ind':td.textContent = abbr(r.M1); break;
                     case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // entretiens détaillés cachés
+                    // entretiens détaillés (cachés)
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
@@ -592,7 +611,7 @@
             const freeM = Math.max(0, cap.entM - deductM);
             const freeT = Math.max(0, cap.entT - deductT);
 
-            // Charge basée UNIQUEMENT sur le MÉTAL (corrigé)
+            // Charge (métal uniquement)
             const load = cap.entM > 0 ? (baseM / cap.entM) : 0;
 
             headersAIA.forEach(h=>{
@@ -686,6 +705,9 @@
                 case 'IMG': return r.IMG;
                 case 'Adresse': return r.Adresse;
                 case 'Type': return r.Type;
+                case 'Filon': {
+                    const v = getFilonLS(r.ID); return v==null?'':String(v);
+                }
                 case 'ProdGroup': return `M:${r.ProdM||0}/h | T:${r.ProdT||0}/h | P:${r.ProdP||0}/j`;
                 case 'StockGroup': return `M:${r.ResM||0} | T:${r.ResT||0} | P:${r.ResP||0}`;
                 case 'ModulesGroup': return [
@@ -705,10 +727,7 @@
                 case 'RentaGroup': return `M:${r.RentaM||0}/j | T:${r.RentaT||0}/j`;
                 case 'LastHarvest': {
                     let label = 'N/A';
-                    try {
-                        const ts = localStorage.getItem(lsKey(r.ID));
-                        label = ts ? timeAgoLabel(ts) : 'N/A';
-                    } catch {}
+                    try { const ts = localStorage.getItem(harvestKey(r.ID)); label = ts ? timeAgoLabel(ts) : 'N/A'; } catch {}
                     return label;
                 }
                 case 'M1_ind': return r.M1;
@@ -755,7 +774,13 @@
     }
 
     // ---- mount ----
-    bodyEl.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
+    const tabsWrap = document.createDocumentFragment();
+    tabsWrap.appendChild(tabsEl);
+    bodyEl.append(tabsWrap, widgetsEl, controlsEl);
+
+    bodyEl.appendChild(tableEl);
+    bodyEl.appendChild(tableAIA);
+
     winEl.append(headEl, bodyEl);
     document.body.appendChild(winEl);
 
@@ -812,9 +837,34 @@
     tipAttachFor(tableAIA);
     window.addEventListener('scroll', hideTip, true);
 
-    // Interception "Récolter" (maj localStorage puis ouverture)
+    // Interception clics
     document.addEventListener('click',(ev)=>{
+        // Fermer menu colonnes si clic ailleurs
         if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
+
+        // Bouton refresh FILON (dans la table Secteurs)
+        const filonBtn = ev.target.closest('.sx-filon-refresh');
+        if (filonBtn) {
+            ev.preventDefault();
+            const id = filonBtn.getAttribute('data-id');
+            const p = window.planete || window.Planete || {};
+            const pid = String(p.ID || '');
+            const fil = toNum(p.Filon);
+            if (!id) return;
+            if (pid !== String(id)) {
+                alert("Ouvre d'abord la planète correspondante, puis reclique sur 🔄.");
+                return;
+            }
+            if (fil === null) {
+                alert("Filon introuvable sur la planète courante.");
+                return;
+            }
+            setFilonLS(id, fil);
+            renderSectors();
+            return;
+        }
+
+        // Récolter (sauver timestamp puis suivre le lien UNE SEULE FOIS)
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
@@ -822,7 +872,7 @@
             try{
                 const url = new URL(a.href, location.href);
                 const id = url.searchParams.get('IDCible');
-                if (id) localStorage.setItem(lsKey(id), String(Date.now()));
+                if (id) localStorage.setItem(harvestKey(id), String(Date.now()));
             }catch{}
             renderSectors();
             const target = a.getAttribute('target') || '_self';
@@ -857,7 +907,7 @@
     winEl.addEventListener('mouseup', clampAll);
     window.addEventListener('resize', clampAll);
 
-    // Onglets (switch)
+    // Onglets
     function activateTab(which){
         activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
         if (activeTab === 'AIA'){
@@ -873,6 +923,7 @@
     tabAIA.onclick     = () => activateTab('AIA');
 
     // initial
+    bodyEl.prepend(tabsEl);
     renderSectors();
     renderAIA();
     requestAnimationFrame(clampAll);
