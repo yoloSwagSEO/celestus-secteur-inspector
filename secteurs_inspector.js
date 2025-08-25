@@ -77,126 +77,148 @@
         } catch {}
         return defs;
     })();
+
+    // ➕ MOD: fonction pour reconstruire les defs si le jeu les met à jour à chaud
+    function rebuildShipDefs(){
+        try{
+            SHIP_DEFS.clear();
+            const src = window.Vaisseaux || {};
+            Reflect.ownKeys(src).forEach(k => {
+                try {
+                    const v = src[k]; const code = String((v?.Code ?? k) || '');
+                    if (code) SHIP_DEFS.set(code, v);
+                } catch {}
+            });
+        } catch {}
+    }
+
     // Codes modules
     const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
     // ---------- Lire Secteurs ----------
-    const raw = (window.Secteurs ?? {});
-    const rows = [];
-    Object.entries(raw).forEach(([k, v]) => {
-        if (typeof k !== 'string' || !k.includes(':')) return;
-        const o = {}; try { for (const kk in v) o[kk] = v[kk]; } catch {}
+    // ➕ MOD: rows devient mutable et reconstruit à la demande
+    let rows = [];
 
-        const ProdT = toNum(o.ProdT);
-        const ProdM = toNum(o.ProdM);
-        const ProdP = toNum(o.ProdP);
-        const ResM  = toNum(o.ResM);
-        const ResT  = toNum(o.ResT);
-        const ResP  = toNum(o.ResP);
+    // ➕ MOD: fonction qui reconstruit rows depuis window.Secteurs (source de vérité)
+    function buildRowsFromWindow(){
+        const raw = (window.Secteurs ?? {});
+        const newRows = [];
+        Object.entries(raw).forEach(([k, v]) => {
+            if (typeof k !== 'string' || !k.includes(':')) return;
+            const o = {}; try { for (const kk in v) o[kk] = v[kk]; } catch {}
 
-        // Modules
-        const M1    = toNum(o.M1);
-        const M4    = toNum(o.M4);
-        const M1M   = toNum(o.M1M);
-        const M1MH  = toNum(o.M1MH);
-        const M1T   = toNum(o.M1T);
-        const M1TH  = toNum(o.M1TH);
+            const ProdT = toNum(o.ProdT);
+            const ProdM = toNum(o.ProdM);
+            const ProdP = toNum(o.ProdP);
+            const ResM  = toNum(o.ResM);
+            const ResT  = toNum(o.ResT);
+            const ResP  = toNum(o.ResP);
 
-        // AIA
-        const AIA   = toNum(o.AIA);
+            // Modules
+            const M1    = toNum(o.M1);
+            const M4    = toNum(o.M4);
+            const M1M   = toNum(o.M1M);
+            const M1MH  = toNum(o.M1MH);
+            const M1T   = toNum(o.M1T);
+            const M1TH  = toNum(o.M1TH);
 
-        // Entretiens (par jour)
-        const EntM1M = (M1||0)*10000;
-        const EntM1T = (M1||0)*5000;
-        const EntM4M = (M4||0)*20000;
-        const EntM4T = (M4||0)*10000;
+            // AIA
+            const AIA   = toNum(o.AIA);
 
-        const EntM1MM  = (M1M ||0)*10_000_000;
-        const EntM1MT  = (M1M ||0)*5_000_000;
-        const EntM1MHM = (M1MH||0)*10_000_000;
-        const EntM1MHT = (M1MH||0)*5_000_000;
-        const EntM1TM  = (M1T ||0)*5_000_000;
-        const EntM1TT  = (M1T ||0)*2_500_000;
-        const EntM1THM = (M1TH||0)*10_000_000;
-        const EntM1THT = (M1TH||0)*5_000_000;
+            // Entretiens (par jour)
+            const EntM1M = (M1||0)*10000;
+            const EntM1T = (M1||0)*5000;
+            const EntM4M = (M4||0)*20000;
+            const EntM4T = (M4||0)*10000;
 
-        const EntretienM = EntM1M + EntM4M + EntM1MM + EntM1MHM + EntM1TM + EntM1THM;
-        const EntretienT = EntM1T + EntM4T + EntM1MT + EntM1MHT + EntM1TT + EntM1THT;
+            const EntM1MM  = (M1M ||0)*10_000_000;
+            const EntM1MT  = (M1M ||0)*5_000_000;
+            const EntM1MHM = (M1MH||0)*10_000_000;
+            const EntM1MHT = (M1MH||0)*5_000_000;
+            const EntM1TM  = (M1T ||0)*5_000_000;
+            const EntM1TT  = (M1T ||0)*2_500_000;
+            const EntM1THM = (M1TH||0)*10_000_000;
+            const EntM1THT = (M1TH||0)*5_000_000;
 
-        const RentaM = (ProdM||0)*24 - EntretienM;
-        const RentaT = (ProdT||0)*24 - EntretienT;
+            const EntretienM = EntM1M + EntM4M + EntM1MM + EntM1MHM + EntM1TM + EntM1THM;
+            const EntretienT = EntM1T + EntM4T + EntM1MT + EntM1MHT + EntM1TT + EntM1THT;
 
-        // Flotte (hors modules) – Secteurs
-        let FleetTotal = 0;
-        const FleetBreakdown = [];
-        if (SHIP_DEFS.size){
-            Object.entries(o).forEach(([code, val])=>{
-                const n = toNum(val); if (!n) return;
-                const c = String(code);
-                if (MODULE_CODES.has(c)) return;       // exclure modules ici
-                if (!SHIP_DEFS.has(c)) return;
-                FleetTotal += n;
-                const def = SHIP_DEFS.get(c) || {};
-                const name = def.Nom || def.NomC || def.NomCourt || c;
-                FleetBreakdown.push({ name, qty:n });
+            const RentaM = (ProdM||0)*24 - EntretienM;
+            const RentaT = (ProdT||0)*24 - EntretienT;
+
+            // Flotte (hors modules) – Secteurs
+            let FleetTotal = 0;
+            const FleetBreakdown = [];
+            if (SHIP_DEFS.size){
+                Object.entries(o).forEach(([code, val])=>{
+                    const n = toNum(val); if (!n) return;
+                    const c = String(code);
+                    if (MODULE_CODES.has(c)) return;       // exclure modules ici
+                    if (!SHIP_DEFS.has(c)) return;
+                    FleetTotal += n;
+                    const def = SHIP_DEFS.get(c) || {};
+                    const name = def.Nom || def.NomC || def.NomCourt || c;
+                    FleetBreakdown.push({ name, qty:n });
+                });
+                FleetBreakdown.sort((a,b)=>b.qty-a.qty);
+            }
+
+            // Flottes AIA (incl. modules)
+            let FleetTotalAIA = 0;
+            const FleetBreakdownAIA = [];
+            if (SHIP_DEFS.size){
+                Object.entries(o).forEach(([code, val])=>{
+                    const n = toNum(val); if (!n) return;
+                    const c = String(code);
+                    if (!SHIP_DEFS.has(c)) return;
+                    FleetTotalAIA += n;
+                    const def = SHIP_DEFS.get(c) || {};
+                    const name = def.Nom || def.NomC || def.NomCourt || c;
+                    FleetBreakdownAIA.push({ name, qty:n, code:c });
+                });
+                FleetBreakdownAIA.sort((a,b)=>b.qty-a.qty);
+            }
+
+            // Entretien base flotte (AIA)
+            function perShipMaintM(def){
+                const CoutM = Number(def?.CoutM||0);
+                const ConsoMult = Number(def?.ConsoMult||1);
+                return Math.floor(CoutM * 0.05 * ConsoMult);
+            }
+            let BaseM = 0, BaseT = 0;
+            FleetBreakdownAIA.forEach(it=>{
+                const def = SHIP_DEFS.get(it.code) || {};
+                const mUnit = perShipMaintM(def);
+                const tUnit = Math.floor(0.5 * mUnit);
+                BaseM += mUnit * it.qty;
+                BaseT += tUnit * it.qty;
             });
-            FleetBreakdown.sort((a,b)=>b.qty-a.qty);
-        }
 
-        // Flottes AIA (incl. modules)
-        let FleetTotalAIA = 0;
-        const FleetBreakdownAIA = [];
-        if (SHIP_DEFS.size){
-            Object.entries(o).forEach(([code, val])=>{
-                const n = toNum(val); if (!n) return;
-                const c = String(code);
-                if (!SHIP_DEFS.has(c)) return;
-                FleetTotalAIA += n;
-                const def = SHIP_DEFS.get(c) || {};
-                const name = def.Nom || def.NomC || def.NomCourt || c;
-                FleetBreakdownAIA.push({ name, qty:n, code:c });
+            newRows.push({
+                RowKey: k, // on garde la clé exacte pour RemplirChampsPlanete
+                IMG: o.IMG ? String(o.IMG) : '',
+                Adresse: o.Adresse||'',
+                ID: o.ID ? String(o.ID) : '',
+                Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
+                ProdM, ProdT, ProdP,
+                ResM, ResT, ResP,
+                // modules
+                M1, M4, M1M, M1MH, M1T, M1TH,
+                AIA,
+                // entretiens
+                EntretienM, EntretienT,
+                EntM1M, EntM1T, EntM4M, EntM4T,
+                EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
+                // rentabilité
+                RentaM, RentaT,
+                // flottes
+                FleetTotal, FleetBreakdown,
+                FleetTotalAIA, FleetBreakdownAIA,
+                BaseM, BaseT
             });
-            FleetBreakdownAIA.sort((a,b)=>b.qty-a.qty);
-        }
-
-        // Entretien base flotte (AIA)
-        function perShipMaintM(def){
-            const CoutM = Number(def?.CoutM||0);
-            const ConsoMult = Number(def?.ConsoMult||1);
-            return Math.floor(CoutM * 0.05 * ConsoMult);
-        }
-        let BaseM = 0, BaseT = 0;
-        FleetBreakdownAIA.forEach(it=>{
-            const def = SHIP_DEFS.get(it.code) || {};
-            const mUnit = perShipMaintM(def);
-            const tUnit = Math.floor(0.5 * mUnit);
-            BaseM += mUnit * it.qty;
-            BaseT += tUnit * it.qty;
         });
-
-        rows.push({
-            RowKey: k, // on garde la clé exacte pour RemplirChampsPlanete
-            IMG: o.IMG ? String(o.IMG) : '',
-            Adresse: o.Adresse||'',
-            ID: o.ID ? String(o.ID) : '',
-            Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
-            ProdM, ProdT, ProdP,
-            ResM, ResT, ResP,
-            // modules
-            M1, M4, M1M, M1MH, M1T, M1TH,
-            AIA,
-            // entretiens
-            EntretienM, EntretienT,
-            EntM1M, EntM1T, EntM4M, EntM4T,
-            EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
-            // rentabilité
-            RentaM, RentaT,
-            // flottes
-            FleetTotal, FleetBreakdown,
-            FleetTotalAIA, FleetBreakdownAIA,
-            BaseM, BaseT
-        });
-    });
+        rows = newRows;
+    }
 
     // ---------- UI ----------
     const css = `
@@ -309,23 +331,26 @@
     const w3 = document.createElement('div'); w3.className='sx-card';
     widgetsEl.append(w1,w2,w3);
 
-    const totals = {ProdM:0,ProdT:0,ProdP:0,ResM:0,ResT:0,ResP:0,RentaM:0,RentaT:0};
-    rows.forEach(r=>{
-        totals.ProdM += r.ProdM||0; totals.ProdT += r.ProdT||0; totals.ProdP += r.ProdP||0;
-        totals.ResM += r.ResM||0; totals.ResT += r.ResT||0; totals.ResP += r.ResP||0;
-        totals.RentaM += r.RentaM||0; totals.RentaT += r.RentaT||0;
-    });
-    w1.innerHTML = `<h3>Productions</h3>
+    // ➕ MOD: fonction pour recalculer et remplir les widgets à partir de rows
+    function updateWidgets(){
+        const totals = {ProdM:0,ProdT:0,ProdP:0,ResM:0,ResT:0,ResP:0,RentaM:0,RentaT:0};
+        rows.forEach(r=>{
+            totals.ProdM += r.ProdM||0; totals.ProdT += r.ProdT||0; totals.ProdP += r.ProdP||0;
+            totals.ResM += r.ResM||0;   totals.ResT += r.ResT||0;   totals.ResP += r.ResP||0;
+            totals.RentaM += r.RentaM||0; totals.RentaT += r.RentaT||0;
+        });
+        w1.innerHTML = `<h3>Productions</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ProdM)}/h — ${abbr(totals.ProdM*24)}/j</span></div>
     <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ProdT)}/h — ${abbr(totals.ProdT*24)}/j</span></div>
     <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ProdP)}/j</span></div>`;
-    w2.innerHTML = `<h3>Stock</h3>
+        w2.innerHTML = `<h3>Stock</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ResM)}</span></div>
     <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ResT)}</span></div>
     <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ResP)}</span></div>`;
-    w3.innerHTML = `<h3>Rentabilité</h3>
+        w3.innerHTML = `<h3>Rentabilité</h3>
     <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span class="${totals.RentaM>=0?'sx-green':'sx-red'}">${abbr(totals.RentaM)}/j</span></div>
     <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
+    }
 
     // ---- controls ----
     const controlsEl = document.createElement('div'); controlsEl.className='sx-controls';
@@ -887,8 +912,15 @@
     }
     btnMin.onclick = ()=>{ minimized ? restoreWindow() : minimizeWindow(); };
 
-    // UI
-    btnRefresh.onclick = () => { renderSectors(); renderAIA(); };
+    // ➕ MOD: vrai refresh depuis les sources du jeu
+    btnRefresh.onclick = () => {
+        rebuildShipDefs();     // au cas où window.Vaisseaux a changé
+        buildRowsFromWindow(); // reconstruit rows depuis window.Secteurs courant
+        updateWidgets();       // recalcule les widgets
+        renderSectors();       // rerender
+        renderAIA();
+    };
+
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
     btnDbg.onclick  = exportJSON;
@@ -997,13 +1029,10 @@
     tabSectors.onclick = () => activateTab('Secteurs');
     tabAIA.onclick     = () => activateTab('AIA');
 
-    // initial
-    const tabsWrap = document.createDocumentFragment();
-    tabsWrap.appendChild(tabsEl);
-    const container = document.createDocumentFragment();
-    container.append(tabsWrap, widgetsEl, controlsEl, tableEl, tableAIA);
-    bodyEl.append(container);
-
+    // ---------- Initial (➕ MOD: construit depuis window.* puis render)
+    rebuildShipDefs();
+    buildRowsFromWindow();
+    updateWidgets();
     renderSectors();
     renderAIA();
     requestAnimationFrame(clampAll);
