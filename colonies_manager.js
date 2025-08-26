@@ -23,7 +23,6 @@
         const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
         return `${sign}${val}${units[u]}`;
     };
-    // "1j 2h 3min 4s"
     const fmtRemain = ms => {
         let s = Math.max(0, Math.floor(ms/1000));
         const d = Math.floor(s / 86400); s -= d*86400;
@@ -43,7 +42,6 @@
     };
     const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
-    // Compétences joueur
     function hasCompetence(id){
         try{
             const j = (window.Joueur || {});
@@ -158,10 +156,10 @@
             const ResT  = toNum(c.ResT);
             const ResP  = toNum(c.ResP);
 
-            const TC = toNum(c.TC); // Technocité
+            const TC = toNum(c.TC);
 
             const ConstBat  = c.ConstBat ? String(c.ConstBat) : '';
-            const ConstTemps = toNum(c.ConstTemps); // epoch (secondes)
+            const ConstTemps = toNum(c.ConstTemps);
             let buildName = ''; let buildLevel = null; let endTs = null;
             if (ConstBat) {
                 buildName = BAT_NAMES.get(ConstBat) || ConstBat;
@@ -232,14 +230,15 @@
   }
   .cx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
+  /* >>> Fix : adresse sous le nom <<< */
+  .cx-addrname{display:flex;flex-direction:column;align-items:flex-start}
   .cx-addrname .nm{display:inline-flex;gap:8px;align-items:center;font-weight:700;margin-bottom:3px}
   .cx-has-tip{cursor:help}
 
-  /* Chip PM à côté du nom */
   .cx-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:12px;line-height:18px;border:1px solid transparent}
   .cx-chip-pm{background:rgba(98,176,255,.12);border-color:rgba(98,176,255,.4);color:#a9d6ff}
 
-  /* === Style PM propre, sans pseudo-éléments (pas de décalage) === */
+  /* Mise en évidence des PM (propre, sans décalage) */
   .cx-pm{
     background:linear-gradient(90deg, rgba(98,176,255,.10) 0%, rgba(98,176,255,.04) 40%, rgba(0,0,0,0) 100%);
     box-shadow: inset 3px 0 0 rgba(62,164,255,.95);
@@ -589,7 +588,7 @@
         }
     }
 
-    // ---------- Countdown (sans refresh auto) ----------
+    // ---------- Countdown ----------
     let countdownTimer = null;
     function startCountdownLoop(){
         if (countdownTimer) clearInterval(countdownTimer);
@@ -610,7 +609,7 @@
         startCountdownLoop();
     }
 
-    // ---------- Tooltip wiring ----------
+    // Tooltip wiring
     function tipAttachFor(el){
         el.addEventListener('mousemove', (e)=>{
             const td = e.target.closest('td.cx-has-tip');
@@ -622,7 +621,7 @@
         el.addEventListener('mouseleave', hideTip);
     }
 
-    // ---------- Mount ----------
+    // Mount
     const container = document.createDocumentFragment();
     container.append(controlsEl, tableEl);
     bodyEl.append(container);
@@ -632,7 +631,7 @@
     tipAttachFor(tableEl);
     window.addEventListener('scroll', hideTip, true);
 
-    // ---------- Bornage fenêtre ----------
+    // Bornage fenêtre
     const MARGIN = 8;
     function clampPos(left, top) {
         const w = winEl.offsetWidth;
@@ -657,7 +656,7 @@
         clampSize();
     }
 
-    // ---------- Events ----------
+    // Events
     btnClose.onclick=()=>{
         try{ window.__coloniesManager=undefined; }catch{}
         if (countdownTimer) clearInterval(countdownTimer);
@@ -740,7 +739,7 @@
     winEl.addEventListener('mouseup', clampAll);
     window.addEventListener('resize', clampAll);
 
-    // ---------- Initial
+    // Initial
     doRefresh();
     requestAnimationFrame(clampAll);
 
