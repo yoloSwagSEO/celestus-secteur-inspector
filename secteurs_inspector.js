@@ -1,3 +1,4 @@
+// secteurs_inspector.js — version CT.win (actions dans le corps) + fix tooltip/colmenu scoping
 (() => {
     // --- anti-double-injection
     if (window.__secteursInspector && typeof window.__secteursInspector.open === 'function') {
@@ -6,43 +7,18 @@
     }
     window.__secteursInspector = {};
 
-    // ---------- Helpers ----------
-    const toNum = v => {
-        if (v === null || v === undefined || v === '') return null;
-        const n = Number(String(v).replace(',', '.'));
-        return Number.isFinite(n) ? n : null;
-    };
-    const abbr = (n) => {
-        if (n === null || n === undefined || !Number.isFinite(n)) return '';
-        const sign = n < 0 ? '-' : '';
-        n = Math.abs(n);
-        const units = ['','k','M','G','T'];
-        let u = 0;
-        while (n >= 1000 && u < units.length - 1) { n /= 1000; u++; }
-        const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
-        return `${sign}${val}${units[u]}`;
-    };
-    const pct = x => `${Math.round((x||0)*1000)/10}%`;
-    const withUnit = (key, v) => {
-        const s = abbr(v);
-        if (!s) return '';
-        if (key === 'ProdM' || key === 'ProdT') return `${s}/h`;
-        if ([
-            'ProdP','EntretienM','EntretienT','RentaM','RentaT',
-            'EntM1M','EntM1T','EntM4M','EntM4T',
-            'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
-        ].includes(key)) return `${s}/j`;
-        return s;
-    };
-    const icon = {
-        M: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResM.png',
-        T: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResT.png',
-        P: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResP.png'
-    };
-    const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
+    // ---------- Pré-requis CT ----------
+    if (!window.CT || !CT.__ready) { console.error('CT core manquant. Injecte ct_core.js d’abord.'); return; }
 
-    // Dernière récolte (localStorage)
+    // ---------- Helpers (via CT + locaux) ----------
+    const toNum = CT.num.to;
+    const abbr = CT.fmt.abbr;
+    const pct  = CT.fmt.pct;
+    const icon = CT.ico;
+    const thumb = CT.thumb;
+
     const harvestKey = id => `secteur_recolte_${id}`;
+
     function timeAgoLabel(ts){
         const t = Number(ts);
         if (!Number.isFinite(t)) return 'N/A';
@@ -57,52 +33,36 @@
         return `il y a ${d}j`;
     }
 
-    // FILON (localStorage)
+    // Filon (LS)
     const filonKey = id => `filon_${id}`;
-    const getFilonLS = (id) => {
-        try { const v = localStorage.getItem(filonKey(id)); return v==null?null:toNum(v); } catch { return null; }
-    };
-    const setFilonLS = (id, val) => {
-        try { localStorage.setItem(filonKey(id), String(val)); } catch {}
-    };
+    const getFilonLS = (id) => { try { const v = localStorage.getItem(filonKey(id)); return v==null?null:toNum(v); } catch { return null; } };
+    const setFilonLS = (id, val) => { try { localStorage.setItem(filonKey(id), String(val)); } catch {} };
 
-    // Définitions vaisseaux (window.Vaisseaux)
-    const SHIP_DEFS = (() => {
-        const defs = new Map();
-        const src = window.Vaisseaux || {};
-        try {
-            Reflect.ownKeys(src).forEach(k => {
-                try { const v = src[k]; const code = String((v?.Code ?? k) || ''); if (code) defs.set(code, v); } catch {}
-            });
-        } catch {}
-        return defs;
-    })();
+    // ---------- Définitions vaisseaux ----------
+    const SHIP_DEFS = new Map();
+    const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
-    // ➕ MOD: fonction pour reconstruire les defs si le jeu les met à jour à chaud
     function rebuildShipDefs(){
         try{
             SHIP_DEFS.clear();
             const src = window.Vaisseaux || {};
-            Reflect.ownKeys(src).forEach(k => {
-                try {
-                    const v = src[k]; const code = String((v?.Code ?? k) || '');
+            Reflect.ownKeys(src).forEach(k=>{
+                try{
+                    const v = src[k];
+                    const code = String((v?.Code ?? k) || '');
                     if (code) SHIP_DEFS.set(code, v);
-                } catch {}
+                }catch{}
             });
-        } catch {}
+        }catch{}
     }
 
-    // Codes modules
-    const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
-
-    // ---------- Lire Secteurs ----------
-    // ➕ MOD: rows devient mutable et reconstruit à la demande
+    // ---------- Lecture Secteurs -> rows ----------
     let rows = [];
 
-    // ➕ MOD: fonction qui reconstruit rows depuis window.Secteurs (source de vérité)
     function buildRowsFromWindow(){
         const raw = (window.Secteurs ?? {});
         const newRows = [];
+
         Object.entries(raw).forEach(([k, v]) => {
             if (typeof k !== 'string' || !k.includes(':')) return;
             const o = {}; try { for (const kk in v) o[kk] = v[kk]; } catch {}
@@ -146,14 +106,14 @@
             const RentaM = (ProdM||0)*24 - EntretienM;
             const RentaT = (ProdT||0)*24 - EntretienT;
 
-            // Flotte (hors modules) – Secteurs
+            // Flotte (hors modules) — Secteurs
             let FleetTotal = 0;
             const FleetBreakdown = [];
             if (SHIP_DEFS.size){
                 Object.entries(o).forEach(([code, val])=>{
                     const n = toNum(val); if (!n) return;
                     const c = String(code);
-                    if (MODULE_CODES.has(c)) return;       // exclure modules ici
+                    if (MODULE_CODES.has(c)) return;
                     if (!SHIP_DEFS.has(c)) return;
                     FleetTotal += n;
                     const def = SHIP_DEFS.get(c) || {};
@@ -195,7 +155,7 @@
             });
 
             newRows.push({
-                RowKey: k, // on garde la clé exacte pour RemplirChampsPlanete
+                RowKey: k,
                 IMG: o.IMG ? String(o.IMG) : '',
                 Adresse: o.Adresse||'',
                 ID: o.ID ? String(o.ID) : '',
@@ -217,142 +177,132 @@
                 BaseM, BaseT
             });
         });
+
         rows = newRows;
     }
 
-    // ---------- UI ----------
-    const css = `
-  .sx-win{position:fixed;top:40px;left:40px;width:1280px;height:650px;background:#0f1422;color:#eaeefc;font:14px/1.35 system-ui,Segoe UI,Arial;z-index:2147483000;border:1px solid #263251;border-radius:12px;display:flex;flex-direction:column;resize:both;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45)}
-  .sx-head{background:#151c2f;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263251}
-  .sx-title{font-weight:700;letter-spacing:.3px}
-  .sx-head-actions{display:flex;gap:8px;align-items:center}
-  .sx-iconbtn{width:28px;height:28px;border-radius:8px;background:#222b44;border:1px solid #2a365a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-  .sx-iconbtn:hover{background:#2a365a}
-  .sx-iconbtn svg{width:16px;height:16px;stroke:#fff}
-  .sx-body{flex:1;overflow:auto;padding:14px}
+    // ---------- UI via CT.win ----------
+    const ui = CT.win.create({
+        id: 'ct-secteurs',
+        title: 'Secteurs Inspector',
+        size: [1280, 650],
+        pos: [40, 40],
+        scroll: 'auto',
+        className: 'ct-app-secteurs'
+    });
+    ui.onClose(() => {
+        try{ window.__secteursInspector = undefined; }catch{}
+        styleEl.remove();
+        colMenuEl.remove();
+        tipEl.remove();
+    });
 
-  .sx-tabs{display:flex;gap:8px;margin:4px 0 10px}
-  .sx-tab{padding:6px 10px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
-  .sx-tab.active{background:#27406e}
+    // ---------- CSS ----------
+    const CSS = `
+  .ct-app-secteurs .sx-tabs{display:flex;gap:8px;margin:4px 0 10px}
+  .ct-app-secteurs .sx-tab{padding:6px 10px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
+  .ct-app-secteurs .sx-tab.active{background:#27406e}
 
-  .sx-widgets{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
-  .sx-card{background:#151c2f;border:1px solid #263251;border-radius:10px;padding:10px}
-  .sx-card h3{margin:0 0 8px;font-size:13px;font-weight:700;color:#ffd4a3;text-shadow:0 0 10px rgba(255,212,163,.2)}
-  .sx-metric{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-radius:8px}
-  .sx-metric img{vertical-align:middle;margin-right:6px}
+  .ct-app-secteurs .sx-widgets{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+  .ct-app-secteurs .sx-card{background:#151c2f;border:1px solid #263251;border-radius:10px;padding:10px}
+  .ct-app-secteurs .sx-card h3{margin:0 0 8px;font-size:13px;font-weight:700;color:#ffd4a3;text-shadow:0 0 10px rgba(255,212,163,.2)}
+  .ct-app-secteurs .sx-metric{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-radius:8px}
+  .ct-app-secteurs .sx-metric img{vertical-align:middle;margin-right:6px}
 
-  .sx-controls{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
-  .sx-left{display:flex;gap:10px;align-items:center}
-  .sx-right{display:flex;gap:10px;align-items:center}
-  .sx-input{padding:8px 10px;border-radius:999px;border:1px solid #2a365a;background:#0b1120;color:#eaeefc;min-width:240px}
-  .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
-  .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
-  .sx-btn:hover{background:#1d2947}
-  .sx-mini-btn{padding:2px 6px;border-radius:8px;border:1px solid #2a365a;background:#1a2240;color:#eaeefc;cursor:pointer;margin-left:6px}
-  .sx-mini-btn:hover{background:#202a52}
+  .ct-app-secteurs .sx-controls{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
+  .ct-app-secteurs .sx-left{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .ct-app-secteurs .sx-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .ct-app-secteurs .sx-input{padding:8px 10px;border-radius:999px;border:1px solid #2a365a;background:#0b1120;color:#eaeefc;min-width:240px}
+  .ct-app-secteurs .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
+  .ct-app-secteurs .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
+  .ct-app-secteurs .sx-btn:hover{background:#1d2947}
 
-  .sx-colmenu{
+  .ct-app-secteurs .sx-colmenu{
     position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
     padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
     max-height:70vh; overflow-y:auto;
   }
-  .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
+  .ct-app-secteurs .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
-  .sx-table{width:100%;border-collapse:separate;border-spacing:0}
-  .sx-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center}
-  .sx-table tbody td{border-bottom:1px solid #1a233c;padding:10px 8px;vertical-align:middle;text-align:center}
-  .sx-thumb{width:60px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #223051}
-  .sx-green{color:#53e08f;font-weight:700}
-  .sx-red{color:#ff6b6b;font-weight:700}
-  .sx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
-  .sx-actions a:hover{background:#202a52}
-  .sx-actions img{width:18px;height:18px}
+  .ct-app-secteurs .sx-table{width:100%;border-collapse:separate;border-spacing:0}
+  .ct-app-secteurs .sx-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center}
+  .ct-app-secteurs .sx-table tbody td{border-bottom:1px solid #1a233c;padding:10px 8px;vertical-align:middle;text-align:center}
+  .ct-app-secteurs .sx-thumb{width:60px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #223051}
+  .ct-app-secteurs .sx-green{color:#53e08f;font-weight:700}
+  .ct-app-secteurs .sx-red{color:#ff6b6b;font-weight:700}
+  .ct-app-secteurs .sx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
+  .ct-app-secteurs .sx-actions a:hover{background:#202a52}
+  .ct-app-secteurs .sx-actions img{width:18px;height:18px}
 
-  /* Tooltip HTML */
-  .sx-tip{position:fixed;z-index:2147483647;display:none;max-width:340px;background:#0f1422;border:1px solid #3a4a7a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
-  .sx-tip h4{margin:0 0 6px;font-size:12px;font-weight:700;color:#ffd4a3}
-  .sx-tip-list{max-height:220px;overflow:auto}
-  .sx-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
-  .sx-tip-item span:first-child{opacity:.9}
-  .sx-tip-item span:last-child{font-weight:700}
+  .ct-app-secteurs .sx-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
+  .ct-app-secteurs .sx-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
+
+  /* Tooltip */
+  .ct-app-secteurs .sx-tip{position:fixed;z-index:2147483647;display:none;max-width:340px;background:#0f1422;border:1px solid #3a4a7a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
+  .ct-app-secteurs .sx-tip h4{margin:0 0 6px;font-size:12px;font-weight:700;color:#ffd4a3}
+  .ct-app-secteurs .sx-tip-list{max-height:220px;overflow:auto}
+  .ct-app-secteurs .sx-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
+  .ct-app-secteurs .sx-tip-item span:first-child{opacity:.9}
+  .ct-app-secteurs .sx-tip-item span:last-child{font-weight:700}
 
   /* Filon coloring */
-  .sx-filon{font-weight:700}
-  .sx-filon.ok{color:#53e08f}      /* >= 0.90 */
-  .sx-filon.warn{color:#f6c26b}    /* [0.80, 0.90) */
-  .sx-filon.bad{color:#ff6b6b}     /* < 0.80 */
-
-  /* IMG + bouton Raccourci */
-  .sx-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
-  .sx-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
+  .ct-app-secteurs .sx-filon{font-weight:700}
+  .ct-app-secteurs .sx-filon.ok{color:#53e08f}
+  .ct-app-secteurs .sx-filon.warn{color:#f6c26b}
+  .ct-app-secteurs .sx-filon.bad{color:#ff6b6b}
   `;
-    const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
+    const styleEl = document.createElement('style'); styleEl.textContent = CSS;
+    document.head.appendChild(styleEl);
 
-    // --- fenêtre + en-tête (icônes blanches + réduire)
-    const winEl = document.createElement('div'); winEl.className='sx-win';
-    const headEl = document.createElement('div'); headEl.className='sx-head';
-    const titleEl = document.createElement('div'); titleEl.className='sx-title'; titleEl.textContent = 'Secteurs Inspector';
-    const headActions = document.createElement('div'); headActions.className='sx-head-actions';
-    const btnMin = document.createElement('button'); btnMin.className='sx-iconbtn'; btnMin.title='Réduire';
-    btnMin.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-    const btnClose = document.createElement('button'); btnClose.className='sx-iconbtn'; btnClose.title='Fermer';
-    btnClose.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
-    headActions.append(btnMin, btnClose);
-    headEl.append(titleEl, headActions);
-    const bodyEl = document.createElement('div'); bodyEl.className='sx-body';
-
-    // Tooltip element
-    const tipEl = document.createElement('div');
-    tipEl.className = 'sx-tip';
-    tipEl.innerHTML = `<h4>Détails</h4><div class="sx-tip-list"></div>`;
-    document.body.appendChild(tipEl);
-    const tipList = tipEl.querySelector('.sx-tip-list');
-    function showTip(html, x, y){
-        tipList.innerHTML = html;
-        tipEl.style.display = 'block';
-        const r = tipEl.getBoundingClientRect();
-        let left = x + 12, top = y + 12;
-        if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
-        if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
-        tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
-    }
-    function hideTip(){ tipEl.style.display = 'none'; }
-
-    // ---- Onglets ----
+    // ---------- Tabs ----------
+    let activeTab = 'Secteurs';
     const tabsEl = document.createElement('div'); tabsEl.className='sx-tabs';
     const tabSectors = document.createElement('button'); tabSectors.className='sx-tab active'; tabSectors.textContent='Secteurs';
     const tabAIA     = document.createElement('button'); tabAIA.className='sx-tab'; tabAIA.textContent='AIA';
     tabsEl.append(tabSectors, tabAIA);
 
-    // ---- widgets ----
+    function activateTab(which){
+        activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
+        if (activeTab === 'AIA'){
+            tabSectors.classList.remove('active'); tabAIA.classList.add('active');
+            tableEl.style.display='none'; tableAIA.style.display='';
+        } else {
+            tabAIA.classList.remove('active'); tabSectors.classList.add('active');
+            tableAIA.style.display='none'; tableEl.style.display='';
+        }
+        hideTip();
+    }
+    tabSectors.onclick = () => activateTab('Secteurs');
+    tabAIA.onclick     = () => activateTab('AIA');
+
+    // ---------- Widgets ----------
     const widgetsEl = document.createElement('div'); widgetsEl.className='sx-widgets';
     const w1 = document.createElement('div'); w1.className='sx-card';
     const w2 = document.createElement('div'); w2.className='sx-card';
     const w3 = document.createElement('div'); w3.className='sx-card';
     widgetsEl.append(w1,w2,w3);
 
-    // ➕ MOD: fonction pour recalculer et remplir les widgets à partir de rows
     function updateWidgets(){
         const totals = {ProdM:0,ProdT:0,ProdP:0,ResM:0,ResT:0,ResP:0,RentaM:0,RentaT:0};
         rows.forEach(r=>{
             totals.ProdM += r.ProdM||0; totals.ProdT += r.ProdT||0; totals.ProdP += r.ProdP||0;
-            totals.ResM += r.ResM||0;   totals.ResT += r.ResT||0;   totals.ResP += r.ResP||0;
+            totals.ResM  += r.ResM||0;  totals.ResT  += r.ResT||0;  totals.ResP  += r.ResP||0;
             totals.RentaM += r.RentaM||0; totals.RentaT += r.RentaT||0;
         });
         w1.innerHTML = `<h3>Productions</h3>
-    <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ProdM)}/h — ${abbr(totals.ProdM*24)}/j</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ProdT)}/h — ${abbr(totals.ProdT*24)}/j</span></div>
-    <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ProdP)}/j</span></div>`;
+      <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ProdM)}/h — ${abbr(totals.ProdM*24)}/j</span></div>
+      <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ProdT)}/h — ${abbr(totals.ProdT*24)}/j</span></div>
+      <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ProdP)}/j</span></div>`;
         w2.innerHTML = `<h3>Stock</h3>
-    <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ResM)}</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ResT)}</span></div>
-    <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ResP)}</span></div>`;
+      <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span>${abbr(totals.ResM)}</span></div>
+      <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span>${abbr(totals.ResT)}</span></div>
+      <div class="sx-metric"><span><img src="${icon.P}" width="16">PhotoP.</span><span>${abbr(totals.ResP)}</span></div>`;
         w3.innerHTML = `<h3>Rentabilité</h3>
-    <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span class="${totals.RentaM>=0?'sx-green':'sx-red'}">${abbr(totals.RentaM)}/j</span></div>
-    <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
+      <div class="sx-metric"><span><img src="${icon.M}" width="16">Metal</span><span class="${totals.RentaM>=0?'sx-green':'sx-red'}">${abbr(totals.RentaM)}/j</span></div>
+      <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
     }
 
-    // ---- controls ----
+    // ---------- Controls (dans le corps, avec labels) ----------
     const controlsEl = document.createElement('div'); controlsEl.className='sx-controls';
     const leftEl = document.createElement('div'); leftEl.className='sx-left';
     const rightEl = document.createElement('div'); rightEl.className='sx-right';
@@ -365,13 +315,14 @@
     leftEl.append(searchEl, fMWrap, fTWrap);
 
     const btnRefresh = document.createElement('button'); btnRefresh.className='sx-btn'; btnRefresh.title='Rafraîchir'; btnRefresh.textContent='🔄';
-    const btnCsv = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.textContent='📥 Export CSV';
-    const btnCols = document.createElement('button'); btnCols.className='sx-btn'; btnCols.textContent='⚙ Colonnes';
-    const btnDbg = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.textContent='🐞 Debug';
+    const btnCsv     = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.innerHTML='📥&nbsp;Export CSV';
+    const btnCols    = document.createElement('button'); btnCols.className='sx-btn'; btnCols.innerHTML='⚙&nbsp;Colonnes';
+    const btnDbg     = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.innerHTML='🐞&nbsp;Debug';
     rightEl.append(btnRefresh, btnCsv, btnCols, btnDbg);
+
     controlsEl.append(leftEl, rightEl);
 
-    // ---- colonnes (Secteurs) ----
+    // ---------- Colonnes ----------
     const headers = [
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
@@ -413,13 +364,12 @@
         {label:'Action', key:'Action', show:true},
     ];
 
-    // ---- colonnes (AIA) ----
     const headersAIA = [
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
         {label:'Niveau', key:'AIA_lvl', show:true},
-        {label:"Entre. Max", key:'AIA_ent', show:true},
-        {label:"Bonus", key:'AIA_bonus', show:true},
+        {label:'Entre. Max', key:'AIA_ent', show:true},
+        {label:'Bonus', key:'AIA_bonus', show:true},
         {label:'Stocks', key:'AIA_stock', show:true},
         {label:'Flottes', key:'AIA_fleet', show:true},
         {label:'Entr. Base', key:'AIA_base', show:true},
@@ -430,11 +380,11 @@
         {label:'Action', key:'Action', show:true},
     ];
 
-    // ---- menu colonnes ----
+    // --- menu colonnes (⚠ scope dans la fenêtre pour que le CSS s'applique)
     const colMenuEl = document.createElement('div');
     colMenuEl.className='sx-colmenu';
-    document.body.appendChild(colMenuEl);
-    let activeTab = 'Secteurs';
+    ui.root.appendChild(colMenuEl);
+
     function buildColMenu(){
         const cols = activeTab === 'AIA' ? headersAIA : headers;
         colMenuEl.innerHTML = '';
@@ -455,7 +405,7 @@
     }
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
-    // ---- tables ----
+    // ---------- Tables ----------
     // Secteurs
     const tableEl = document.createElement('table'); tableEl.className='sx-table';
     const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
@@ -463,6 +413,10 @@
     theadEl.appendChild(trh);
     const tbodyEl = document.createElement('tbody');
     tableEl.append(theadEl, tbodyEl);
+
+    function applyHeaderVisibility(){
+        Array.from(trh.children).forEach((th,i)=>{ th.style.display = headers[i].show ? '' : 'none'; });
+    }
 
     // AIA
     const tableAIA = document.createElement('table'); tableAIA.className='sx-table'; tableAIA.style.display='none';
@@ -472,18 +426,54 @@
     const tbodyA = document.createElement('tbody');
     tableAIA.append(theadA, tbodyA);
 
-    function applyHeaderVisibility(){
-        Array.from(trh.children).forEach((th,i)=>{
-            th.style.display = headers[i].show ? '' : 'none';
-        });
-    }
     function applyHeaderVisibilityAIA(){
-        Array.from(trhA.children).forEach((th,i)=>{
-            th.style.display = headersAIA[i].show ? '' : 'none';
-        });
+        Array.from(trhA.children).forEach((th,i)=>{ th.style.display = headersAIA[i].show ? '' : 'none'; });
     }
 
-    // ---- render SECTEURS ----
+    // ---------- Tooltip (⚠ scope dans la fenêtre pour le CSS + z-index) ----------
+    const tipEl = document.createElement('div');
+    tipEl.className = 'sx-tip';
+    tipEl.innerHTML = `<h4>Détails</h4><div class="sx-tip-list"></div>`;
+    ui.root.appendChild(tipEl);
+    const tipList = tipEl.querySelector('.sx-tip-list');
+    function showTip(html, x, y){
+        tipList.innerHTML = html;
+        tipEl.style.display = 'block';
+        const r = tipEl.getBoundingClientRect();
+        let left = x + 12, top = y + 12;
+        if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
+        if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
+        tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
+    }
+    function hideTip(){ tipEl.style.display = 'none'; }
+
+    function tipAttachFor(el){
+        el.addEventListener('mousemove', (e)=>{
+            const td = e.target.closest('td.sx-has-tip');
+            if (!td || !el.contains(td)) { hideTip(); return; }
+            const html = td.dataset.tipHtml || '';
+            if (!html) { hideTip(); return; }
+            showTip(html, e.clientX, e.clientY);
+        });
+        el.addEventListener('mouseleave', hideTip);
+    }
+    tipAttachFor(tableEl);
+    tipAttachFor(tableAIA);
+    window.addEventListener('scroll', hideTip, true);
+
+    // ---------- Rendu SECTEURS ----------
+    function withUnit(key, v){
+        const s = abbr(v);
+        if (!s) return '';
+        if (key === 'ProdM' || key === 'ProdT') return `${s}/h`;
+        if ([
+            'ProdP','EntretienM','EntretienT','RentaM','RentaT',
+            'EntM1M','EntM1T','EntM4M','EntM4T',
+            'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
+        ].includes(key)) return `${s}/j`;
+        return s;
+    }
+
     function renderSectors(){
         applyHeaderVisibility();
         tbodyEl.innerHTML='';
@@ -503,7 +493,6 @@
                 const td=document.createElement('td');
                 switch(h.key){
                     case 'IMG': {
-                        // lien "raccourci secteur" collé à l'image planète (même colonne)
                         const wrap = document.createElement('div'); wrap.className='sx-imgwrap';
                         const aRac = document.createElement('a');
                         aRac.className = 'sx-rac';
@@ -526,15 +515,14 @@
                         td.textContent = r.Type || '';
                         break;
 
-                    // ---- FILON ----
                     case 'Filon': {
                         const val = getFilonLS(r.ID);
                         if (val !== null && Number.isFinite(val)) {
-                            const v = Math.round(val * 100) / 100; // 2 déc.
+                            const v = Math.round(val * 100) / 100;
                             const cls = (val >= 0.90) ? 'ok' : (val >= 0.80 ? 'warn' : 'bad');
                             td.innerHTML = `<span class="sx-filon ${cls}">${v.toFixed(2)}</span>`;
                         } else {
-                            td.innerHTML = `N/A <button class="sx-mini-btn sx-filon-refresh" data-id="${r.ID}" title="Récupérer depuis la planète courante">🔄</button>`;
+                            td.innerHTML = `N/A <button class="sx-btn sx-filon-refresh" style="padding:2px 6px" data-id="${r.ID}" title="Récupérer depuis la planète courante">🔄</button>`;
                         }
                         break;
                     }
@@ -559,7 +547,7 @@
                         if (r.M1MH) html += `<div>Col. Minière: <b>${abbr(r.M1MH)}</b></div>`;
                         if (r.M1T)  html += `<div>Extr. Jovien: <b>${abbr(r.M1T)}</b></div>`;
                         if (r.M1TH) html += `<div>Raf. Mobile: <b>${abbr(r.M1TH)}</b></div>`;
-                        td.innerHTML = html;
+                        td.innerHTML = html || '—';
                         break;
                     }
                     case 'Flotte': {
@@ -641,7 +629,7 @@
         });
     }
 
-    // ---- AIA helpers ----
+    // ---------- AIA helpers + rendu ----------
     function computeAIA(level){
         const lvl = Math.max(0, Number(level)||0);
         const entM = 240_000_000 * Math.sqrt(lvl) * (10 / (Math.pow(lvl,0.75) + 10) + 0.25);
@@ -650,7 +638,6 @@
         return { entM, entT, bonus };
     }
 
-    // ---- render AIA ----
     function renderAIA(){
         applyHeaderVisibilityAIA();
         tbodyA.innerHTML = '';
@@ -767,7 +754,7 @@
         });
     }
 
-    // ---- Export CSV (toutes colonnes, même masquées) ----
+    // ---------- Export ----------
     function exportCSV(){
         const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
         const headerLabels = headers.map(h=>h.label || '');
@@ -817,7 +804,6 @@
         a.download='secteurs.csv'; a.click(); URL.revokeObjectURL(a.href);
     }
 
-    // ---- Export JSON brut de window.Secteurs ----
     function exportJSON(){
         try{
             const src = window.Secteurs ?? {};
@@ -848,108 +834,20 @@
         }
     }
 
-    // ---- mount ----
-    bodyEl.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
-    winEl.append(headEl, bodyEl);
-    document.body.appendChild(winEl);
-
-    // ---------- Bornage fenêtre ----------
-    const MARGIN = 8;
-    function clampPos(left, top) {
-        const w = winEl.offsetWidth;
-        const h = winEl.offsetHeight;
-        const maxLeft = Math.max(MARGIN, window.innerWidth - w - MARGIN);
-        const maxTop  = Math.max(MARGIN, window.innerHeight - h - MARGIN);
-        return { left: Math.min(Math.max(left, MARGIN), maxLeft),
-            top:  Math.min(Math.max(top,  MARGIN), maxTop) };
-    }
-    function clampSize() {
-        const rect = winEl.getBoundingClientRect();
-        const maxW = Math.max(200, window.innerWidth  - rect.left - MARGIN);
-        const maxH = Math.max(160, window.innerHeight - rect.top  - MARGIN);
-        if (rect.width  > maxW) winEl.style.width  = `${maxW}px`;
-        if (rect.height > maxH) winEl.style.height = `${maxH}px`;
-    }
-    function clampAll() {
-        const rect = winEl.getBoundingClientRect();
-        const pos = clampPos(rect.left, rect.top);
-        winEl.style.left = `${pos.left}px`;
-        winEl.style.top  = `${pos.top}px`;
-        clampSize();
-    }
-
-    // ---------- events ----------
-    // fermer
-    btnClose.onclick=()=>{
-        try{ window.__secteursInspector=undefined; }catch{}
-        winEl.remove(); styleEl.remove(); colMenuEl.remove(); tipEl.remove();
-    };
-
-    // réduire / restaurer
-    let minimized = false;
-    const orig = { width: '', height: '', left: '', top: '' };
-    function minimizeWindow(){
-        if (minimized) return;
-        const r = winEl.getBoundingClientRect();
-        orig.width = winEl.style.width; orig.height = winEl.style.height;
-        orig.left = winEl.style.left; orig.top = winEl.style.top;
-        winEl.style.width = '300px';
-        winEl.style.height = '44px';
-        winEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
-        winEl.style.top  = Math.max(8, Math.min(r.top,  window.innerHeight - 52)) + 'px';
-        bodyEl.style.display='none';
-        minimized = true;
-    }
-    function restoreWindow(){
-        if (!minimized) return;
-        winEl.style.width = orig.width || '';
-        winEl.style.height = orig.height || '';
-        winEl.style.left = orig.left || '40px';
-        winEl.style.top = orig.top || '40px';
-        bodyEl.style.display='';
-        minimized = false;
-        clampAll();
-    }
-    btnMin.onclick = ()=>{ minimized ? restoreWindow() : minimizeWindow(); };
-
-    // ➕ MOD: vrai refresh depuis les sources du jeu
-    btnRefresh.onclick = () => {
-        rebuildShipDefs();     // au cas où window.Vaisseaux a changé
-        buildRowsFromWindow(); // reconstruit rows depuis window.Secteurs courant
-        updateWidgets();       // recalcule les widgets
-        renderSectors();       // rerender
-        renderAIA();
-    };
-
+    // ---------- Events ----------
+    btnRefresh.onclick = () => { rebuildShipDefs(); buildRowsFromWindow(); updateWidgets(); renderSectors(); renderAIA(); };
     btnCsv.onclick = exportCSV;
     btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
     btnDbg.onclick  = exportJSON;
 
-    // recherche / filtres
     searchEl.oninput = renderSectors;
     fM.onchange = renderSectors; fT.onchange = renderSectors;
 
-    // Tooltip delegation
-    function tipAttachFor(el){
-        el.addEventListener('mousemove', (e)=>{
-            const td = e.target.closest('td.sx-has-tip');
-            if (!td || !el.contains(td)) { hideTip(); return; }
-            const html = td.dataset.tipHtml || '';
-            if (!html) { hideTip(); return; }
-            showTip(html, e.clientX, e.clientY);
-        });
-        el.addEventListener('mouseleave', hideTip);
-    }
-    tipAttachFor(tableEl);
-    tipAttachFor(tableAIA);
-    window.addEventListener('scroll', hideTip, true);
-
-    // Interception clics
     document.addEventListener('click',(ev)=>{
         // Fermer menu colonnes si clic ailleurs
         if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
 
-        // Bouton refresh FILON (dans la table Secteurs)
+        // Bouton refresh FILON
         const filonBtn = ev.target.closest('.sx-filon-refresh');
         if (filonBtn) {
             ev.preventDefault();
@@ -958,20 +856,14 @@
             const pid = String(p.ID || '');
             const fil = toNum(p.Filon);
             if (!id) return;
-            if (pid !== String(id)) {
-                alert("Ouvre d'abord la planète correspondante, puis reclique sur 🔄.");
-                return;
-            }
-            if (fil === null) {
-                alert("Filon introuvable sur la planète courante.");
-                return;
-            }
+            if (pid !== String(id)) { alert("Ouvre d'abord la planète correspondante, puis reclique sur 🔄."); return; }
+            if (fil == null) { alert("Filon introuvable sur la planète courante."); return; }
             setFilonLS(id, fil);
             renderSectors();
             return;
         }
 
-        // Récolter (sauver timestamp puis suivre le lien UNE SEULE FOIS)
+        // Récolter : stamp + suivi du lien
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
@@ -987,58 +879,22 @@
         }
     }, true);
 
-    // Drag + bornage
-    let drag=false, dx=0, dy=0;
-    headEl.addEventListener('mousedown',e=>{
-        if(e.target.closest('button, input')) return;
-        drag=true;
-        const rect = winEl.getBoundingClientRect();
-        dx = e.clientX - rect.left;
-        dy = e.clientY - rect.top;
-        e.preventDefault();
-    });
-    document.addEventListener('mousemove',e=>{
-        if(!drag) return;
-        const left = e.clientX - dx;
-        const top  = e.clientY - dy;
-        const pos  = clampPos(left, top);
-        winEl.style.left = `${pos.left}px`;
-        winEl.style.top  = `${pos.top}px`;
-    });
-    document.addEventListener('mouseup',()=>drag=false);
+    // ---------- Mount ----------
+    ui.body.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
 
-    if (window.ResizeObserver) {
-        const ro = new ResizeObserver(() => clampSize());
-        ro.observe(winEl);
-    }
-    winEl.addEventListener('mouseup', clampAll);
-    window.addEventListener('resize', clampAll);
-
-    // Onglets
-    function activateTab(which){
-        activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
-        if (activeTab === 'AIA'){
-            tabSectors.classList.remove('active'); tabAIA.classList.add('active');
-            tableEl.style.display='none'; tableAIA.style.display='';
-        } else {
-            tabAIA.classList.remove('active'); tabSectors.classList.add('active');
-            tableAIA.style.display='none'; tableEl.style.display='';
-        }
-        hideTip();
-    }
-    tabSectors.onclick = () => activateTab('Secteurs');
-    tabAIA.onclick     = () => activateTab('AIA');
-
-    // ---------- Initial (➕ MOD: construit depuis window.* puis render)
+    // ---------- Initial ----------
     rebuildShipDefs();
     buildRowsFromWindow();
     updateWidgets();
     renderSectors();
     renderAIA();
-    requestAnimationFrame(clampAll);
 
-    // API
+    // ---------- API ----------
     window.__secteursInspector = {
-        open(){ winEl.style.display='flex'; /* restaure si minifié */ restoreWindow(); clampAll(); }
+        open(){
+            ui.setSize(1280, 650);
+            ui.bringToFront?.();
+            updateWidgets(); renderSectors(); renderAIA();
+        }
     };
 })();

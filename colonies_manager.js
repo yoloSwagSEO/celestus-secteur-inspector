@@ -1,4 +1,4 @@
-// colonies_manager.js
+// colonies_manager.js — version CT.win (boutons dans le corps, pas dans l’entête)
 (() => {
     // --- anti-double-injection
     if (window.__coloniesManager && typeof window.__coloniesManager.open === 'function') {
@@ -7,23 +7,15 @@
     }
     window.__coloniesManager = {};
 
-    // ---------- Helpers ----------
-    const toNum = v => {
-        if (v === null || v === undefined || v === '') return null;
-        const n = Number(String(v).replace(',', '.'));
-        return Number.isFinite(n) ? n : null;
-    };
-    const abbr = (n) => {
-        if (n === null || n === undefined || !Number.isFinite(n)) return '';
-        const sign = n < 0 ? '-' : '';
-        n = Math.abs(n);
-        const units = ['','k','M','G','T'];
-        let u = 0;
-        while (n >= 1000 && u < units.length - 1) { n /= 1000; u++; }
-        const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
-        return `${sign}${val}${units[u]}`;
-    };
-    const fmtRemain = ms => {
+    // ---------- Pré-requis CT ----------
+    if (!window.CT || !CT.__ready) { console.error('CT core manquant. Injecte ct_core.js d’abord.'); return; }
+
+    // ---------- Helpers (via CT + locaux) ----------
+    const toNum = CT.num.to;
+    const abbr = CT.fmt.abbr;
+    const icon = CT.ico;
+    const thumb = CT.thumb;
+    const fmtRemain = (ms) => {
         let s = Math.max(0, Math.floor(ms/1000));
         const d = Math.floor(s / 86400); s -= d*86400;
         const h = Math.floor(s / 3600);  s -= h*3600;
@@ -35,12 +27,6 @@
         parts.push(`${s}s`);
         return parts.join(' ');
     };
-    const icon = {
-        M: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResM.png',
-        T: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResT.png',
-        P: 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResP.png'
-    };
-    const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
     function hasCompetence(id){
         try{
@@ -190,107 +176,99 @@
         rows = newRows;
     }
 
-    // ---------- UI ----------
-    const css = `
-  .cx-win{position:fixed;top:90px;left:70px;width:1280px;height:600px;background:#0f1422;color:#eaeefc;font:14px/1.35 system-ui,Segoe UI,Arial;z-index:2147483000;border:1px solid #263251;border-radius:12px;display:flex;flex-direction:column;resize:both;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45)}
-  .cx-head{background:#151c2f;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263251}
-  .cx-title{font-weight:700;letter-spacing:.3px}
-  .cx-head-actions{display:flex;gap:8px;align-items:center}
-  .cx-iconbtn{width:28px;height:28px;border-radius:8px;background:#222b44;border:1px solid #2a365a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-  .cx-iconbtn:hover{background:#2a365a}
-  .cx-iconbtn svg{width:16px;height:16px;stroke:#fff}
-  .cx-body{flex:1;overflow:auto;padding:14px}
+    // ---------- UI via CT.win ----------
+    const ui = CT.win.create({
+        id: 'ct-colonies',
+        title: 'Colonies Manager',
+        size: [1280, 600],
+        pos: [70, 90],
+        scroll: 'auto',
+        className: 'ct-app-colonies'
+    });
+    ui.onClose(() => {
+        try { window.__coloniesManager = undefined; } catch {}
+        if (countdownTimer) clearInterval(countdownTimer);
+        styleEl.remove();
+        colMenuEl.remove();
+        tipEl.remove();
+    });
 
-  .cx-controls{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
-  .cx-left{display:flex;gap:10px;align-items:center}
-  .cx-right{display:flex;gap:10px;align-items:center}
-  .cx-input{padding:8px 10px;border-radius:999px;border:1px solid #2a365a;background:#0b1120;color:#eaeefc;min-width:260px}
-  .cx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
-  .cx-btn:hover{background:#1d2947}
+    // ---------- CSS ----------
+    const CSS = `
+  .ct-app-colonies .cm-controls{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
+  .ct-app-colonies .cm-left{display:flex;gap:10px;align-items:center}
+  .ct-app-colonies .cm-right{display:flex;gap:10px;align-items:center}
+  .ct-app-colonies .cm-input{padding:8px 10px;border-radius:999px;border:1px solid #2a4b7a;background:#0b1120;color:#eaeefc;min-width:260px}
 
-  .cx-table{width:100%;border-collapse:separate;border-spacing:0}
-  .cx-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center;z-index:1}
-  .cx-table tbody tr{position:relative}
-  .cx-table tbody td{border-bottom:1px solid #1a233c;padding:10px 8px;vertical-align:middle;text-align:center;background:transparent}
+  .ct-app-colonies .cm-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a4b7a;background:#18213a;color:#eaeefc;cursor:pointer}
+  .ct-app-colonies .cm-btn:hover{background:#1d2947}
 
-  .cx-thumb{width:60px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #223051}
-  .cx-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
-  .cx-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
-  .cx-green{color:#53e08f;font-weight:700}
-  .cx-red{color:#ff6b6b;font-weight:700}
-  .cx-badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a}
-  .cx-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
-  .cx-actions a:hover{background:#202a52}
-  .cx-actions img{width:18px;height:18px}
+  .ct-app-colonies .cm-table{width:100%;border-collapse:separate;border-spacing:0}
+  .ct-app-colonies .cm-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center;z-index:1}
+  .ct-app-colonies .cm-table tbody td{border-bottom:1px solid #1a233c;padding:10px 8px;vertical-align:middle;text-align:center;background:transparent}
 
-  .cx-colmenu{
+  .ct-app-colonies .cm-thumb{width:60px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #223051}
+  .ct-app-colonies .cm-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
+  .ct-app-colonies .cm-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
+
+  .ct-app-colonies .cm-green{color:#53e08f;font-weight:700}
+  .ct-app-colonies .cm-red{color:#ff6b6b;font-weight:700}
+  .ct-app-colonies .cm-badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a}
+
+  .ct-app-colonies .cm-actions a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#1a2240;border:1px solid #2f3d6a;margin-right:6px}
+  .ct-app-colonies .cm-actions a:hover{background:#202a52}
+  .ct-app-colonies .cm-actions img{width:18px;height:18px}
+
+  .cm-colmenu{
     position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
     padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
     max-height:70vh; overflow-y:auto;
   }
-  .cx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
+  .cm-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
 
-  /* >>> Fix : adresse sous le nom <<< */
-  .cx-addrname{display:flex;flex-direction:column;align-items:flex-start}
-  .cx-addrname .nm{display:inline-flex;gap:8px;align-items:center;font-weight:700;margin-bottom:3px}
-  .cx-has-tip{cursor:help}
+  .ct-app-colonies .cm-addrname{display:flex;flex-direction:column;align-items:flex-start}
+  .ct-app-colonies .cm-addrname .nm{display:inline-flex;gap:8px;align-items:center;font-weight:700;margin-bottom:3px}
+  .ct-app-colonies .cm-has-tip{cursor:help}
 
-  .cx-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:12px;line-height:18px;border:1px solid transparent}
-  .cx-chip-pm{background:rgba(98,176,255,.12);border-color:rgba(98,176,255,.4);color:#a9d6ff}
-
-  /* Mise en évidence des PM (propre, sans décalage) */
-  .cx-pm{
+  .ct-app-colonies .cm-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:12px;line-height:18px;border:1px solid transparent}
+  .ct-app-colonies .cm-chip-pm{background:rgba(98,176,255,.12);border-color:rgba(98,176,255,.4);color:#a9d6ff}
+  .ct-app-colonies .cm-pm{
     background:linear-gradient(90deg, rgba(98,176,255,.10) 0%, rgba(98,176,255,.04) 40%, rgba(0,0,0,0) 100%);
     box-shadow: inset 3px 0 0 rgba(62,164,255,.95);
   }
+
+  /* Tooltip */
+  .cm-tip{position:fixed;z-index:2147483647;display:none;max-width:340px;background:#0f1422;border:1px solid #3a4a7a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
+  .cm-tip h4{margin:0 0 6px;font-size:12px;font-weight:700;color:#ffd4a3}
+  .cm-tip-list{max-height:220px;overflow:auto}
+  .cm-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
+  .cm-tip-item span:first-child{opacity:.9}
+  .cm-tip-item span:last-child{font-weight:700}
   `;
-    const styleEl = document.createElement('style'); styleEl.textContent = css; document.head.appendChild(styleEl);
+    const styleEl = document.createElement('style'); styleEl.textContent = CSS;
+    document.head.appendChild(styleEl);
 
-    // --- fenêtre
-    const winEl = document.createElement('div'); winEl.className='cx-win';
-    const headEl = document.createElement('div'); headEl.className='cx-head';
-    const titleEl = document.createElement('div'); titleEl.className='cx-title'; titleEl.textContent = 'Colonies Manager';
-    const headActions = document.createElement('div'); headActions.className='cx-head-actions';
-    const btnMin = document.createElement('button'); btnMin.className='cx-iconbtn'; btnMin.title='Réduire';
-    btnMin.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-    const btnClose = document.createElement('button'); btnClose.className='cx-iconbtn'; btnClose.title='Fermer';
-    btnClose.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>`;
-    headActions.append(btnMin, btnClose);
-    headEl.append(titleEl, headActions);
+    // ---------- Controls (dans le corps de la fenêtre) ----------
+    const controlsEl = document.createElement('div'); controlsEl.className='cm-controls';
+    const leftEl = document.createElement('div'); leftEl.className='cm-left';
+    const rightEl = document.createElement('div'); rightEl.className='cm-right';
 
-    const bodyEl = document.createElement('div'); bodyEl.className='cx-body';
-
-    // Tooltip
-    const tipEl = document.createElement('div');
-    tipEl.className = 'cx-tip';
-    tipEl.innerHTML = `<h4>Détails</h4><div class="cx-tip-list"></div>`;
-    document.body.appendChild(tipEl);
-    const tipList = tipEl.querySelector('.cx-tip-list');
-    function showTip(html, x, y){
-        tipList.innerHTML = html;
-        tipEl.style.display = 'block';
-        const r = tipEl.getBoundingClientRect();
-        let left = x + 12, top = y + 12;
-        if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
-        if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
-        tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
-    }
-    function hideTip(){ tipEl.style.display = 'none'; }
-
-    // Controls
-    const controlsEl = document.createElement('div'); controlsEl.className='cx-controls';
-    const leftEl = document.createElement('div'); leftEl.className='cx-left';
-    const rightEl = document.createElement('div'); rightEl.className='cx-right';
-    const searchEl = document.createElement('input'); searchEl.className='cx-input'; searchEl.placeholder='Recherche nom/adresse…';
+    const searchEl = document.createElement('input'); searchEl.className='cm-input'; searchEl.placeholder='Recherche nom/adresse…';
     leftEl.append(searchEl);
-    const btnRefresh = document.createElement('button'); btnRefresh.className='cx-btn'; btnRefresh.title='Rafraîchir'; btnRefresh.textContent='🔄';
-    const btnCsv = document.createElement('button'); btnCsv.className='cx-btn'; btnCsv.textContent='📥 Export CSV';
-    const btnCols = document.createElement('button'); btnCols.className='cx-btn'; btnCols.textContent='⚙ Colonnes';
-    const btnDbg = document.createElement('button'); btnDbg.className='cx-btn'; btnDbg.textContent='🐞 Debug';
+
+    // Boutons d’action (dans le corps, avec labels)
+    const btnRefresh = document.createElement('button'); btnRefresh.className='cm-btn'; btnRefresh.title='Rafraîchir'; btnRefresh.textContent='🔄';
+    const btnCsv     = document.createElement('button'); btnCsv.className='cm-btn'; btnCsv.innerHTML='📥&nbsp;Export CSV';
+    const btnCols    = document.createElement('button'); btnCols.className='cm-btn'; btnCols.innerHTML='⚙&nbsp;Colonnes';
+    const btnDbg     = document.createElement('button'); btnDbg.className='cm-btn'; btnDbg.innerHTML='🐞&nbsp;Debug';
     rightEl.append(btnRefresh, btnCsv, btnCols, btnDbg);
+
     controlsEl.append(leftEl, rightEl);
 
-    // --- Persistences colonnes
+    // ---------- Table ----------
+    const tableEl = document.createElement('table'); tableEl.className='cm-table';
+    const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
+
     const COLS_LS_KEY = 'colonies_cols_v3';
 
     function buildLabel(code){ return BAT_NAMES.get(code) || code; }
@@ -331,9 +309,30 @@
     }
     loadCols();
 
+    headers.forEach(h=>{
+        const th = document.createElement('th');
+        if (h.labelHTML) th.innerHTML = h.labelHTML;
+        else th.textContent = h.label || '';
+        trh.appendChild(th);
+    });
+    theadEl.appendChild(trh);
+    const tbodyEl = document.createElement('tbody');
+    tableEl.append(theadEl, tbodyEl);
+
+    function applyHeaderVisibility(){
+        Array.from(trh.children).forEach((th,i)=>{
+            const h = headers[i];
+            if (h.labelHTML) th.innerHTML = h.labelHTML;
+            else th.textContent = h.label || '';
+            th.style.display = h.show ? '' : 'none';
+        });
+    }
+
+    // ---------- Col menu ----------
     const colMenuEl = document.createElement('div');
-    colMenuEl.className='cx-colmenu';
+    colMenuEl.className='cm-colmenu';
     document.body.appendChild(colMenuEl);
+
     function buildColMenu(){
         headers.forEach(h=>{
             if (BUILDING_CODES.includes(h.key)) h.label = buildLabel(h.key);
@@ -357,27 +356,35 @@
     }
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
-    // Table
-    const tableEl = document.createElement('table'); tableEl.className='cx-table';
-    const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
-    headers.forEach(h=>{
-        const th = document.createElement('th');
-        if (h.labelHTML) th.innerHTML = h.labelHTML;
-        else th.textContent = h.label || '';
-        trh.appendChild(th);
-    });
-    theadEl.appendChild(trh);
-    const tbodyEl = document.createElement('tbody');
-    tableEl.append(theadEl, tbodyEl);
-
-    function applyHeaderVisibility(){
-        Array.from(trh.children).forEach((th,i)=>{
-            const h = headers[i];
-            if (h.labelHTML) th.innerHTML = h.labelHTML;
-            else th.textContent = h.label || '';
-            th.style.display = h.show ? '' : 'none';
-        });
+    // ---------- Tooltip ----------
+    const tipEl = document.createElement('div');
+    tipEl.className = 'cm-tip';
+    tipEl.innerHTML = `<h4>Détails</h4><div class="cm-tip-list"></div>`;
+    document.body.appendChild(tipEl);
+    const tipList = tipEl.querySelector('.cm-tip-list');
+    function showTip(html, x, y){
+        tipList.innerHTML = html;
+        tipEl.style.display = 'block';
+        const r = tipEl.getBoundingClientRect();
+        let left = x + 12, top = y + 12;
+        if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
+        if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
+        tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
     }
+    function hideTip(){ tipEl.style.display = 'none'; }
+
+    function tipAttachFor(el){
+        el.addEventListener('mousemove', (e)=>{
+            const td = e.target.closest('td.cm-has-tip');
+            if (!td || !el.contains(td)) { hideTip(); return; }
+            const html = td.dataset.tipHtml || '';
+            if (!html) { hideTip(); return; }
+            showTip(html, e.clientX, e.clientY);
+        });
+        el.addEventListener('mouseleave', hideTip);
+    }
+    tipAttachFor(tableEl);
+    window.addEventListener('scroll', hideTip, true);
 
     // ---------- Rendu ----------
     function render(){
@@ -392,22 +399,22 @@
 
         filtered.forEach(r=>{
             const tr = document.createElement('tr');
-            if ((r.Type||'').toUpperCase() === 'PM') tr.classList.add('cx-pm');
+            if ((r.Type||'').toUpperCase() === 'PM') tr.classList.add('cm-pm');
 
             headers.forEach(h=>{
                 if (!h.show) return;
                 const td = document.createElement('td');
                 switch(h.key){
                     case 'IMG': {
-                        const wrap = document.createElement('div'); wrap.className='cx-imgwrap';
+                        const wrap = document.createElement('div'); wrap.className='cm-imgwrap';
                         const aRac = document.createElement('a');
-                        aRac.className = 'cx-rac';
+                        aRac.className = 'cm-rac';
                         aRac.href = `javascript:try{RemplirChampsPlanete('racourcis_secteurs','${String(r.RowKey).replace(/'/g,"\\'")}')}catch(e){console.error('Raccourci colonies : erreur ignorée',e)}`;
                         aRac.title = 'Cibler la planète';
                         wrap.appendChild(aRac);
                         if (r.IMG) {
                             const im = document.createElement('img');
-                            im.className='cx-thumb';
+                            im.className='cm-thumb';
                             im.src = thumb(r.IMG);
                             wrap.appendChild(im);
                         }
@@ -416,12 +423,12 @@
                     }
                     case 'Adresse': {
                         const div = document.createElement('div');
-                        div.className = 'cx-addrname';
+                        div.className = 'cm-addrname';
                         const nm = document.createElement('span'); nm.className='nm';
                         nm.textContent = r.Nom || '';
                         if ((r.Type||'').toUpperCase() === 'PM') {
                             const chip = document.createElement('span');
-                            chip.className = 'cx-chip cx-chip-pm';
+                            chip.className = 'cm-chip cm-chip-pm';
                             chip.textContent = 'PM';
                             nm.appendChild(chip);
                         }
@@ -439,9 +446,9 @@
                             const lvlStr = (r.buildLevel!=null) ? String(r.buildLevel) : '';
                             const name = r.buildName || r.ConstBat;
                             const topLine = document.createElement('div');
-                            topLine.innerHTML = `<span class="cx-green">${lvlStr}</span> ${name}`;
+                            topLine.innerHTML = `<span class="cm-green">${lvlStr}</span> ${name}`;
                             const eta = document.createElement('div');
-                            eta.className = 'cx-badge';
+                            eta.className = 'cm-badge';
                             eta.dataset.endTs = String(r.endTs);
                             const remain = Math.max(0, r.endTs - Date.now());
                             eta.textContent = fmtRemain(remain);
@@ -459,7 +466,7 @@
                         const pct = t>0 ? Math.round((u/t)*100) : 0;
                         const txt = `${u}/${t} (${pct}%)`;
                         td.textContent = txt;
-                        if (pct > 95) td.classList.add('cx-red');
+                        if (pct > 95) td.classList.add('cm-red');
                         break;
                     }
                     case 'ProdGroup':
@@ -478,14 +485,14 @@
                         const total = r.FleetTotal || 0;
                         td.textContent = abbr(total);
                         td.dataset.tipHtml = (r.FleetBreakdown && r.FleetBreakdown.length)
-                            ? r.FleetBreakdown.map(it => `<div class="cx-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`).join('')
-                            : `<div class="cx-tip-item"><span>Aucun vaisseau</span><span>0</span></div>`;
-                        td.classList.add('cx-has-tip');
+                            ? r.FleetBreakdown.map(it => `<div class="cm-tip-item"><span>${it.name}</span><span>${it.qty}</span></div>`).join('')
+                            : `<div class="cm-tip-item"><span>Aucun vaisseau</span><span>0</span></div>`;
+                        td.classList.add('cm-has-tip');
                         break;
                     }
                     case 'Action': {
                         const sid = (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : '';
-                        td.className='cx-actions';
+                        td.className='cm-actions';
                         td.innerHTML = `
               <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${sid}&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoFlotte.png" alt="">
@@ -594,7 +601,7 @@
         if (countdownTimer) clearInterval(countdownTimer);
         countdownTimer = setInterval(()=>{
             const now = Date.now();
-            tbodyEl.querySelectorAll('.cx-badge[data-end-ts]').forEach(el=>{
+            ui.body.querySelectorAll('.cm-badge[data-end-ts]').forEach(el=>{
                 const ts = Number(el.dataset.endTs);
                 if (!Number.isFinite(ts)) return;
                 const remain = Math.max(0, ts - now);
@@ -609,97 +616,20 @@
         startCountdownLoop();
     }
 
-    // Tooltip wiring
-    function tipAttachFor(el){
-        el.addEventListener('mousemove', (e)=>{
-            const td = e.target.closest('td.cx-has-tip');
-            if (!td || !el.contains(td)) { hideTip(); return; }
-            const html = td.dataset.tipHtml || '';
-            if (!html) { hideTip(); return; }
-            showTip(html, e.clientX, e.clientY);
-        });
-        el.addEventListener('mouseleave', hideTip);
-    }
-
-    // Mount
-    const container = document.createDocumentFragment();
-    container.append(controlsEl, tableEl);
-    bodyEl.append(container);
-    winEl.append(headEl, bodyEl);
-    document.body.appendChild(winEl);
-
-    tipAttachFor(tableEl);
-    window.addEventListener('scroll', hideTip, true);
-
-    // Bornage fenêtre
-    const MARGIN = 8;
-    function clampPos(left, top) {
-        const w = winEl.offsetWidth;
-        const h = winEl.offsetHeight;
-        const maxLeft = Math.max(MARGIN, window.innerWidth - w - MARGIN);
-        const maxTop  = Math.max(MARGIN, window.innerHeight - h - MARGIN);
-        return { left: Math.min(Math.max(left, MARGIN), maxLeft),
-            top:  Math.min(Math.max(top,  MARGIN), maxTop) };
-    }
-    function clampSize() {
-        const rect = winEl.getBoundingClientRect();
-        const maxW = Math.max(200, window.innerWidth  - rect.left - MARGIN);
-        const maxH = Math.max(160, window.innerHeight - rect.top  - MARGIN);
-        if (rect.width  > maxW) winEl.style.width  = `${maxW}px`;
-        if (rect.height > maxH) winEl.style.height = `${maxH}px`;
-    }
-    function clampAll() {
-        const rect = winEl.getBoundingClientRect();
-        const pos = clampPos(rect.left, rect.top);
-        winEl.style.left = `${pos.left}px`;
-        winEl.style.top  = `${pos.top}px`;
-        clampSize();
-    }
-
-    // Events
-    btnClose.onclick=()=>{
-        try{ window.__coloniesManager=undefined; }catch{}
-        if (countdownTimer) clearInterval(countdownTimer);
-        winEl.remove(); styleEl.remove(); colMenuEl.remove(); tipEl.remove();
-    };
-
-    let minimized = false;
-    const orig = { width: '', height: '', left: '', top: '' };
-    function minimizeWindow(){
-        if (minimized) return;
-        const r = winEl.getBoundingClientRect();
-        orig.width = winEl.style.width; orig.height = winEl.style.height;
-        orig.left = winEl.style.left; orig.top = winEl.style.top;
-        winEl.style.width = '300px';
-        winEl.style.height = '44px';
-        winEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
-        winEl.style.top  = Math.max(8, Math.min(r.top,  window.innerHeight - 52)) + 'px';
-        bodyEl.style.display='none';
-        minimized = true;
-    }
-    function restoreWindow(){
-        if (!minimized) return;
-        winEl.style.width = orig.width || '';
-        winEl.style.height = orig.height || '';
-        winEl.style.left = orig.left || '70px';
-        winEl.style.top = orig.top || '90px';
-        bodyEl.style.display='';
-        minimized = false;
-        clampAll();
-    }
-    btnMin.onclick = ()=>{ minimized ? restoreWindow() : minimizeWindow(); };
-
+    // ---------- Events ----------
     btnRefresh.onclick = doRefresh;
-    btnCsv.onclick = exportCSV;
-    btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
-    btnDbg.onclick  = exportJSON;
-    searchEl.oninput = render;
+    btnCsv.onclick     = exportCSV;
+    btnCols.onclick    = () => { if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
+    btnDbg.onclick     = exportJSON;
+    searchEl.oninput   = render;
 
     document.addEventListener('click',(ev)=>{
+        // Fermer menu colonnes si clic ailleurs
         if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
 
+        // Interception "Récolter" pour timestamp puis ouverture
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
-        if (a && a.closest('.cx-actions')) {
+        if (a && a.closest('.cm-actions')) {
             ev.preventDefault();
             ev.stopPropagation();
             try{
@@ -712,39 +642,18 @@
         }
     }, true);
 
-    // drag
-    let drag=false, dx=0, dy=0;
-    headEl.addEventListener('mousedown',e=>{
-        if(e.target.closest('button, input')) return;
-        drag=true;
-        const rect = winEl.getBoundingClientRect();
-        dx = e.clientX - rect.left;
-        dy = e.clientY - rect.top;
-        e.preventDefault();
-    });
-    document.addEventListener('mousemove',e=>{
-        if(!drag) return;
-        const left = e.clientX - dx;
-        const top  = e.clientY - dy;
-        const pos  = clampPos(left, top);
-        winEl.style.left = `${pos.left}px`;
-        winEl.style.top  = `${pos.top}px`;
-    });
-    document.addEventListener('mouseup',()=>drag=false);
+    // ---------- Mount ----------
+    ui.body.append(controlsEl, tableEl);
 
-    if (window.ResizeObserver) {
-        const ro = new ResizeObserver(() => clampSize());
-        ro.observe(winEl);
-    }
-    winEl.addEventListener('mouseup', clampAll);
-    window.addEventListener('resize', clampAll);
-
-    // Initial
+    // ---------- Initial ----------
     doRefresh();
-    requestAnimationFrame(clampAll);
 
-    // API
+    // ---------- API publique ----------
     window.__coloniesManager = {
-        open(){ winEl.style.display='flex'; restoreWindow(); clampAll(); doRefresh(); }
+        open(){
+            ui.setSize(1280, 600);
+            ui.bringToFront?.();
+            doRefresh();
+        }
     };
 })();
