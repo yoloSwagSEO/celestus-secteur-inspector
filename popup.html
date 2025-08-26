@@ -4,60 +4,21 @@
     <meta charset="UTF-8" />
     <title>Celestus Tools</title>
     <style>
-        :root {
-            --bg: #0f1422;
-            --panel: #18213a;
-            --panel-hover: #243358;
-            --border: #2a365a;
-            --ok: #53e08f;
-            --err: #ff6b6b;
-            --accent: #ffd4a3;
-            --text: #eaeefc;
-        }
-        body {
-            font: 14px/1.4 system-ui, Segoe UI, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            margin: 12px;
-            width: 300px;
-        }
-        h1 {
-            font-size: 16px;
-            margin: 0 0 10px;
-            color: var(--accent);
-            letter-spacing: .2px;
-        }
-        .group-title {
-            margin-top: 12px;
-            font-size: 12px;
-            opacity: .8;
-            text-transform: uppercase;
-            letter-spacing: .6px;
-        }
-        button {
-            display: block;
-            width: 100%;
-            margin: 6px 0;
-            padding: 8px 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: var(--panel);
-            color: var(--text);
-            cursor: pointer;
-            text-align: left;
-        }
-        button:hover { background: var(--panel-hover); }
-        #status { margin-top: 10px; font-size: 12px; }
-        #status.ok { color: var(--ok); }
-        #status.err { color: var(--err); }
-        .small { font-size: 12px; opacity: .95; }
+        :root{ --bg:#0f1422; --panel:#18213a; --panel-hover:#243358; --border:#2a365a; --ok:#53e08f; --err:#ff6b6b; --accent:#ffd4a3; --text:#eaeefc; }
+        body{ font:14px/1.4 system-ui, Segoe UI, sans-serif; background:var(--bg); color:var(--text); margin:12px; width:300px; }
+        h1{ font-size:16px; margin:0 0 10px; color:var(--accent); letter-spacing:.2px; }
+        .group-title{ margin-top:12px; font-size:12px; opacity:.8; text-transform:uppercase; letter-spacing:.6px; }
+        button{ display:block; width:100%; margin:6px 0; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); cursor:pointer; text-align:left; }
+        button:hover{ background:var(--panel-hover); }
+        #status{ margin-top:10px; font-size:12px; }
+        #status.ok{ color:var(--ok); } #status.err{ color:var(--err); }
+        .small{ font-size:12px; opacity:.95; }
     </style>
 </head>
 <body>
 <h1>Celestus Tools</h1>
 
 <div class="group-title">Rapide</div>
-<!-- Ancien bouton (legacy) -->
 <button id="inject">Injecter (Secteurs)</button>
 
 <div class="group-title">Fenêtres</div>
@@ -70,7 +31,6 @@
 <button id="inject-all">Injecter Tout</button>
 
 <div id="status" class="small">Prêt.</div>
-
 <script src="popup.js"></script>
 </body>
 </html>
