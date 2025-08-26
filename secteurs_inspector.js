@@ -1,4 +1,4 @@
-// secteurs_inspector.js — version CT.win (actions dans le corps) + fix tooltip/colmenu scoping
+// secteurs_inspector.js — CT.win + colonne Fav (checkbox à droite) + menu colonnes FIX + tooltips OK
 (() => {
     // --- anti-double-injection
     if (window.__secteursInspector && typeof window.__secteursInspector.open === 'function') {
@@ -7,18 +7,49 @@
     }
     window.__secteursInspector = {};
 
-    // ---------- Pré-requis CT ----------
-    if (!window.CT || !CT.__ready) { console.error('CT core manquant. Injecte ct_core.js d’abord.'); return; }
+    // --- dépendance core
+    if (!window.CT || !CT.__ready) {
+        console.error('CT core manquant. Injecte ct_core.js d’abord.');
+        return;
+    }
 
-    // ---------- Helpers (via CT + locaux) ----------
-    const toNum = CT.num.to;
-    const abbr = CT.fmt.abbr;
-    const pct  = CT.fmt.pct;
-    const icon = CT.ico;
-    const thumb = CT.thumb;
+    // ---------- Helpers ----------
+    const toNum = v => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(String(v).replace(',', '.'));
+        return Number.isFinite(n) ? n : null;
+    };
+    const abbr = (n) => {
+        if (n === null || n === undefined || !Number.isFinite(n)) return '';
+        const sign = n < 0 ? '-' : '';
+        n = Math.abs(n);
+        const units = ['','k','M','G','T'];
+        let u = 0;
+        while (n >= 1000 && u < units.length - 1) { n /= 1000; u++; }
+        const val = n >= 100 ? Math.round(n) : (n >= 10 ? Math.round(n*10)/10 : Math.round(n*100)/100);
+        return `${sign}${val}${units[u]}`;
+    };
+    const pct = x => `${Math.round((x||0)*1000)/10}%`;
+    const withUnit = (key, v) => {
+        const s = abbr(v);
+        if (!s) return '';
+        if (key === 'ProdM' || key === 'ProdT') return `${s}/h`;
+        if ([
+            'ProdP','EntretienM','EntretienT','RentaM','RentaT',
+            'EntM1M','EntM1T','EntM4M','EntM4T',
+            'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
+        ].includes(key)) return `${s}/j`;
+        return s;
+    };
+    const icon = {
+        M: CT.ico?.M || 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResM.png',
+        T: CT.ico?.T || 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResT.png',
+        P: CT.ico?.P || 'https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/ResP.png'
+    };
+    const thumb = id => `https://horizon.celestus.fr/CelestusV2/Interface/Decors/Planetes/thumbnails/${id}.png`;
 
+    // Dernière récolte (localStorage)
     const harvestKey = id => `secteur_recolte_${id}`;
-
     function timeAgoLabel(ts){
         const t = Number(ts);
         if (!Number.isFinite(t)) return 'N/A';
@@ -33,36 +64,72 @@
         return `il y a ${d}j`;
     }
 
-    // Filon (LS)
+    // FILON (localStorage)
     const filonKey = id => `filon_${id}`;
-    const getFilonLS = (id) => { try { const v = localStorage.getItem(filonKey(id)); return v==null?null:toNum(v); } catch { return null; } };
-    const setFilonLS = (id, val) => { try { localStorage.setItem(filonKey(id), String(val)); } catch {} };
+    const getFilonLS = (id) => {
+        try { const v = localStorage.getItem(filonKey(id)); return v==null?null:toNum(v); } catch { return null; }
+    };
+    const setFilonLS = (id, val) => {
+        try { localStorage.setItem(filonKey(id), String(val)); } catch {}
+    };
+
+    // ---------- Fav store (partagé avec favories.js) ----------
+    const FAV_KEY = 'favorites:v1';
+    function getFavs(){
+        try{ const v = CT.store.get(FAV_KEY, []); return Array.isArray(v)?v:[]; }catch{ return []; }
+    }
+    function isFav(kind, id){
+        const key = `${kind}:${id}`;
+        return getFavs().some(f => `${f.kind}:${f.id}` === key);
+    }
+    function addFav(entry){ // {kind:'colony'|'sector', id, rowKey, adresse, img}
+        const cur = getFavs();
+        const key = `${entry.kind}:${entry.id}`;
+        if (!cur.some(f => `${f.kind}:${f.id}` === key)) {
+            cur.push(entry);
+            try{ CT.store.set(FAV_KEY, cur); window.dispatchEvent(new CustomEvent('ct:fav:changed')); }catch{}
+        }
+    }
+    function removeFav(kind, id){
+        const key = `${kind}:${id}`;
+        const next = getFavs().filter(f => `${f.kind}:${f.id}` !== key);
+        try{ CT.store.set(FAV_KEY, next); window.dispatchEvent(new CustomEvent('ct:fav:changed')); }catch{}
+    }
+
+    function sid() {
+        try { return (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : ''; } catch { return ''; }
+    }
 
     // ---------- Définitions vaisseaux ----------
-    const SHIP_DEFS = new Map();
-    const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
-
+    const SHIP_DEFS = (() => {
+        const defs = new Map();
+        const src = window.Vaisseaux || {};
+        try {
+            Reflect.ownKeys(src).forEach(k => {
+                try { const v = src[k]; const code = String((v?.Code ?? k) || ''); if (code) defs.set(code, v); } catch {}
+            });
+        } catch {}
+        return defs;
+    })();
     function rebuildShipDefs(){
         try{
             SHIP_DEFS.clear();
             const src = window.Vaisseaux || {};
-            Reflect.ownKeys(src).forEach(k=>{
-                try{
-                    const v = src[k];
-                    const code = String((v?.Code ?? k) || '');
+            Reflect.ownKeys(src).forEach(k => {
+                try {
+                    const v = src[k]; const code = String((v?.Code ?? k) || '');
                     if (code) SHIP_DEFS.set(code, v);
-                }catch{}
+                } catch {}
             });
-        }catch{}
+        } catch {}
     }
+    const MODULE_CODES = new Set(['M1','M4','M1M','M1MH','M1T','M1TH']);
 
-    // ---------- Lecture Secteurs -> rows ----------
+    // ---------- Lire Secteurs ----------
     let rows = [];
-
     function buildRowsFromWindow(){
         const raw = (window.Secteurs ?? {});
         const newRows = [];
-
         Object.entries(raw).forEach(([k, v]) => {
             if (typeof k !== 'string' || !k.includes(':')) return;
             const o = {}; try { for (const kk in v) o[kk] = v[kk]; } catch {}
@@ -74,7 +141,6 @@
             const ResT  = toNum(o.ResT);
             const ResP  = toNum(o.ResP);
 
-            // Modules
             const M1    = toNum(o.M1);
             const M4    = toNum(o.M4);
             const M1M   = toNum(o.M1M);
@@ -82,10 +148,8 @@
             const M1T   = toNum(o.M1T);
             const M1TH  = toNum(o.M1TH);
 
-            // AIA
             const AIA   = toNum(o.AIA);
 
-            // Entretiens (par jour)
             const EntM1M = (M1||0)*10000;
             const EntM1T = (M1||0)*5000;
             const EntM4M = (M4||0)*20000;
@@ -106,7 +170,7 @@
             const RentaM = (ProdM||0)*24 - EntretienM;
             const RentaT = (ProdT||0)*24 - EntretienT;
 
-            // Flotte (hors modules) — Secteurs
+            // Flotte (hors modules)
             let FleetTotal = 0;
             const FleetBreakdown = [];
             if (SHIP_DEFS.size){
@@ -139,7 +203,6 @@
                 FleetBreakdownAIA.sort((a,b)=>b.qty-a.qty);
             }
 
-            // Entretien base flotte (AIA)
             function perShipMaintM(def){
                 const CoutM = Number(def?.CoutM||0);
                 const ConsoMult = Number(def?.ConsoMult||1);
@@ -162,26 +225,21 @@
                 Type: (String(o.Type||'') === 'Rien' && (AIA||0) > 0) ? 'AIA' : (o.Type||''),
                 ProdM, ProdT, ProdP,
                 ResM, ResT, ResP,
-                // modules
                 M1, M4, M1M, M1MH, M1T, M1TH,
                 AIA,
-                // entretiens
                 EntretienM, EntretienT,
                 EntM1M, EntM1T, EntM4M, EntM4T,
                 EntM1MM, EntM1MT, EntM1MHM, EntM1MHT, EntM1TM, EntM1TT, EntM1THM, EntM1THT,
-                // rentabilité
                 RentaM, RentaT,
-                // flottes
                 FleetTotal, FleetBreakdown,
                 FleetTotalAIA, FleetBreakdownAIA,
                 BaseM, BaseT
             });
         });
-
         rows = newRows;
     }
 
-    // ---------- UI via CT.win ----------
+    // ---------- UI (via CT.win) ----------
     const ui = CT.win.create({
         id: 'ct-secteurs',
         title: 'Secteurs Inspector',
@@ -190,14 +248,12 @@
         scroll: 'auto',
         className: 'ct-app-secteurs'
     });
-    ui.onClose(() => {
+    ui.onClose(()=> {
+        try{ st.remove(); colMenuEl?.remove(); tipEl?.remove(); }catch{}
         try{ window.__secteursInspector = undefined; }catch{}
-        styleEl.remove();
-        colMenuEl.remove();
-        tipEl.remove();
     });
 
-    // ---------- CSS ----------
+    // CSS
     const CSS = `
   .ct-app-secteurs .sx-tabs{display:flex;gap:8px;margin:4px 0 10px}
   .ct-app-secteurs .sx-tab{padding:6px 10px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
@@ -210,22 +266,17 @@
   .ct-app-secteurs .sx-metric img{vertical-align:middle;margin-right:6px}
 
   .ct-app-secteurs .sx-controls{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
-  .ct-app-secteurs .sx-left{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .ct-app-secteurs .sx-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .ct-app-secteurs .sx-left{display:flex;gap:10px;align-items:center}
+  .ct-app-secteurs .sx-right{display:flex;gap:10px;align-items:center}
   .ct-app-secteurs .sx-input{padding:8px 10px;border-radius:999px;border:1px solid #2a365a;background:#0b1120;color:#eaeefc;min-width:240px}
   .ct-app-secteurs .sx-toggle{display:flex;gap:6px;align-items:center;background:#151c2f;border:1px solid #263251;padding:6px 8px;border-radius:999px}
   .ct-app-secteurs .sx-btn{padding:8px 12px;border-radius:999px;border:1px solid #2a365a;background:#18213a;color:#eaeefc;cursor:pointer}
   .ct-app-secteurs .sx-btn:hover{background:#1d2947}
-
-  .ct-app-secteurs .sx-colmenu{
-    position:fixed;background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
-    padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;box-shadow:0 12px 30px rgba(0,0,0,.5);
-    max-height:70vh; overflow-y:auto;
-  }
-  .ct-app-secteurs .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
+  .ct-app-secteurs .sx-mini-btn{padding:2px 6px;border-radius:8px;border:1px solid #2a365a;background:#1a2240;color:#eaeefc;cursor:pointer;margin-left:6px}
+  .ct-app-secteurs .sx-mini-btn:hover{background:#202a52}
 
   .ct-app-secteurs .sx-table{width:100%;border-collapse:separate;border-spacing:0}
-  .ct-app-secteurs .sx-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center}
+  .ct-app-secteurs .sx-table thead th{position:sticky;top:0;background:#151c2f;border-bottom:1px solid #263251;padding:10px 8px;text-align:center;z-index:1}
   .ct-app-secteurs .sx-table tbody td{border-bottom:1px solid #1a233c;padding:10px 8px;vertical-align:middle;text-align:center}
   .ct-app-secteurs .sx-thumb{width:60px;height:48px;border-radius:8px;object-fit:cover;border:1px solid #223051}
   .ct-app-secteurs .sx-green{color:#53e08f;font-weight:700}
@@ -237,45 +288,36 @@
   .ct-app-secteurs .sx-imgwrap{display:flex;align-items:center;gap:6px;justify-content:center}
   .ct-app-secteurs .sx-rac{display:inline-block;height:48px;width:18px;background:url('https://horizon.celestus.fr/CelestusV2/Interface/Skin/Boutons/RacPlanete.png') center/contain no-repeat;border-radius:4px}
 
+  /* MENU COLONNES */
+  .ct-app-secteurs .sx-colmenu{
+    position:fixed;
+    background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
+    padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;
+    box-shadow:0 12px 30px rgba(0,0,0,.5);
+    max-height:70vh; overflow-y:auto;
+  }
+  .ct-app-secteurs .sx-colmenu label{white-space:nowrap;display:flex;gap:8px;align-items:center}
+
   /* Tooltip */
   .ct-app-secteurs .sx-tip{position:fixed;z-index:2147483647;display:none;max-width:340px;background:#0f1422;border:1px solid #3a4a7a;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px}
   .ct-app-secteurs .sx-tip h4{margin:0 0 6px;font-size:12px;font-weight:700;color:#ffd4a3}
   .ct-app-secteurs .sx-tip-list{max-height:220px;overflow:auto}
   .ct-app-secteurs .sx-tip-item{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
-  .ct-app-secteurs .sx-tip-item span:first-child{opacity:.9}
-  .ct-app-secteurs .sx-tip-item span:last-child{font-weight:700}
 
-  /* Filon coloring */
-  .ct-app-secteurs .sx-filon{font-weight:700}
-  .ct-app-secteurs .sx-filon.ok{color:#53e08f}
-  .ct-app-secteurs .sx-filon.warn{color:#f6c26b}
-  .ct-app-secteurs .sx-filon.bad{color:#ff6b6b}
+  /* Fav checkbox compact (colonne à droite) */
+  .ct-app-secteurs .sx-favcell{width:42px}
+  .ct-app-secteurs .sx-favcheck{display:inline-flex;align-items:center;justify-content:center}
+  .ct-app-secteurs .sx-favcheck input{width:16px;height:16px;cursor:pointer}
   `;
-    const styleEl = document.createElement('style'); styleEl.textContent = CSS;
-    document.head.appendChild(styleEl);
+    const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
 
-    // ---------- Tabs ----------
-    let activeTab = 'Secteurs';
+    // Tabs
     const tabsEl = document.createElement('div'); tabsEl.className='sx-tabs';
     const tabSectors = document.createElement('button'); tabSectors.className='sx-tab active'; tabSectors.textContent='Secteurs';
     const tabAIA     = document.createElement('button'); tabAIA.className='sx-tab'; tabAIA.textContent='AIA';
     tabsEl.append(tabSectors, tabAIA);
 
-    function activateTab(which){
-        activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
-        if (activeTab === 'AIA'){
-            tabSectors.classList.remove('active'); tabAIA.classList.add('active');
-            tableEl.style.display='none'; tableAIA.style.display='';
-        } else {
-            tabAIA.classList.remove('active'); tabSectors.classList.add('active');
-            tableAIA.style.display='none'; tableEl.style.display='';
-        }
-        hideTip();
-    }
-    tabSectors.onclick = () => activateTab('Secteurs');
-    tabAIA.onclick     = () => activateTab('AIA');
-
-    // ---------- Widgets ----------
+    // Widgets
     const widgetsEl = document.createElement('div'); widgetsEl.className='sx-widgets';
     const w1 = document.createElement('div'); w1.className='sx-card';
     const w2 = document.createElement('div'); w2.className='sx-card';
@@ -286,7 +328,7 @@
         const totals = {ProdM:0,ProdT:0,ProdP:0,ResM:0,ResT:0,ResP:0,RentaM:0,RentaT:0};
         rows.forEach(r=>{
             totals.ProdM += r.ProdM||0; totals.ProdT += r.ProdT||0; totals.ProdP += r.ProdP||0;
-            totals.ResM  += r.ResM||0;  totals.ResT  += r.ResT||0;  totals.ResP  += r.ResP||0;
+            totals.ResM += r.ResM||0;   totals.ResT += r.ResT||0;   totals.ResP += r.ResP||0;
             totals.RentaM += r.RentaM||0; totals.RentaT += r.RentaT||0;
         });
         w1.innerHTML = `<h3>Productions</h3>
@@ -302,7 +344,7 @@
       <div class="sx-metric"><span><img src="${icon.T}" width="16">Tritium</span><span class="${totals.RentaT>=0?'sx-green':'sx-red'}">${abbr(totals.RentaT)}/j</span></div>`;
     }
 
-    // ---------- Controls (dans le corps, avec labels) ----------
+    // Controls
     const controlsEl = document.createElement('div'); controlsEl.className='sx-controls';
     const leftEl = document.createElement('div'); leftEl.className='sx-left';
     const rightEl = document.createElement('div'); rightEl.className='sx-right';
@@ -315,14 +357,15 @@
     leftEl.append(searchEl, fMWrap, fTWrap);
 
     const btnRefresh = document.createElement('button'); btnRefresh.className='sx-btn'; btnRefresh.title='Rafraîchir'; btnRefresh.textContent='🔄';
-    const btnCsv     = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.innerHTML='📥&nbsp;Export CSV';
-    const btnCols    = document.createElement('button'); btnCols.className='sx-btn'; btnCols.innerHTML='⚙&nbsp;Colonnes';
-    const btnDbg     = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.innerHTML='🐞&nbsp;Debug';
+    const btnCsv = document.createElement('button'); btnCsv.className='sx-btn'; btnCsv.textContent='📥 Export CSV';
+    const btnCols = document.createElement('button'); btnCols.className='sx-btn'; btnCols.textContent='⚙ Colonnes';
+    const btnDbg = document.createElement('button'); btnDbg.className='sx-btn'; btnDbg.textContent='🐞 Debug';
     rightEl.append(btnRefresh, btnCsv, btnCols, btnDbg);
-
     controlsEl.append(leftEl, rightEl);
 
-    // ---------- Colonnes ----------
+    // ---- colonnes (Secteurs)
+    const COLS_LS_KEY = 'secteurs_cols_v4';
+
     const headers = [
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
@@ -343,8 +386,6 @@
         {label:'Col. Minière', key:'M1MH', show:false},
         {label:'Extr. Jovien', key:'M1T', show:false},
         {label:'Raf. Mobile', key:'M1TH', show:false},
-        {label:'Mod. Minier (ind)', key:'M1_ind', show:false},
-        {label:'Concent. (ind)', key:'M4_ind', show:false},
         {label:'Flotte', key:'Flotte', show:true},
         {label:'Entretien', key:'EntGroup', show:true},
         {label:'Entr. Mod. Minier métal', key:'EntM1M', show:false},
@@ -362,36 +403,59 @@
         {label:'Renta', key:'RentaGroup', show:true},
         {label:'Dernière récolte', key:'LastHarvest', show:true},
         {label:'Action', key:'Action', show:true},
+        {label:'Fav', key:'Fav', show:true}, // <<< colonne Favori à droite
     ];
 
+    // ---- colonnes (AIA)
     const headersAIA = [
         {label:'', key:'IMG', show:true},
         {label:'Adresse', key:'Adresse', show:true},
         {label:'Niveau', key:'AIA_lvl', show:true},
-        {label:'Entre. Max', key:'AIA_ent', show:true},
-        {label:'Bonus', key:'AIA_bonus', show:true},
+        {label:"Entre. Max", key:'AIA_ent', show:true},
+        {label:"Bonus", key:'AIA_bonus', show:true},
         {label:'Stocks', key:'AIA_stock', show:true},
         {label:'Flottes', key:'AIA_fleet', show:true},
         {label:'Entr. Base', key:'AIA_base', show:true},
         {label:'Entr. Déduit', key:'AIA_deduct', show:true},
-        {label:'Entr.', key:'AIA_rest', show:true},
+        {label:'Entr. Restant', key:'AIA_rest', show:true},
         {label:'Entr. Dispo', key:'AIA_free', show:true},
         {label:'Charge', key:'AIA_load', show:true},
         {label:'Action', key:'Action', show:true},
+        {label:'Fav', key:'Fav', show:true}, // optionnel aussi en AIA
     ];
 
-    // --- menu colonnes (⚠ scope dans la fenêtre pour que le CSS s'applique)
+    function loadCols(){
+        try{
+            const raw = localStorage.getItem(COLS_LS_KEY);
+            if (!raw) return;
+            const map = JSON.parse(raw);
+            headers.forEach(h=>{ if (Object.prototype.hasOwnProperty.call(map, h.key)) h.show = !!map[h.key]; });
+            headersAIA.forEach(h=>{ if (Object.prototype.hasOwnProperty.call(map, 'AIA:'+h.key)) h.show = !!map['AIA:'+h.key]; });
+        }catch{}
+    }
+    function saveCols(){
+        try{
+            const map = {};
+            headers.forEach(h=> map[h.key] = !!h.show);
+            headersAIA.forEach(h=> map['AIA:'+h.key] = !!h.show);
+            localStorage.setItem(COLS_LS_KEY, JSON.stringify(map));
+        }catch{}
+    }
+    loadCols();
+
+    // ---- menu colonnes
     const colMenuEl = document.createElement('div');
     colMenuEl.className='sx-colmenu';
-    ui.root.appendChild(colMenuEl);
+    ui.root.appendChild(colMenuEl); // attaché à la fenêtre pour z-index
 
+    let activeTab = 'Secteurs';
     function buildColMenu(){
         const cols = activeTab === 'AIA' ? headersAIA : headers;
         colMenuEl.innerHTML = '';
         cols.forEach(h=>{
             const lbl=document.createElement('label');
             const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=h.show;
-            cb.onchange=()=>{ h.show = cb.checked; activeTab==='AIA'?renderAIA():renderSectors(); };
+            cb.onchange=()=>{ h.show = cb.checked; saveCols(); (activeTab==='AIA'?renderAIA:renderSectors)(); };
             lbl.append(cb, document.createTextNode(' '+(h.label||'Colonne')));
             colMenuEl.appendChild(lbl);
         });
@@ -405,32 +469,44 @@
     }
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
-    // ---------- Tables ----------
+    // ---- tables
     // Secteurs
     const tableEl = document.createElement('table'); tableEl.className='sx-table';
     const theadEl = document.createElement('thead'); const trh = document.createElement('tr');
-    headers.forEach(h=>{ const th=document.createElement('th'); th.textContent=h.label; trh.appendChild(th); });
+    const thByKey = new Map();
+    headers.forEach(h=>{ const th=document.createElement('th'); th.dataset.key=h.key; th.textContent=h.label; if (h.key==='Fav') th.classList.add('sx-favcell'); trh.appendChild(th); thByKey.set(h.key, th); });
     theadEl.appendChild(trh);
     const tbodyEl = document.createElement('tbody');
     tableEl.append(theadEl, tbodyEl);
 
     function applyHeaderVisibility(){
-        Array.from(trh.children).forEach((th,i)=>{ th.style.display = headers[i].show ? '' : 'none'; });
+        headers.forEach(h=>{
+            const th = thByKey.get(h.key);
+            if (!th) return;
+            th.textContent = h.label || '';
+            th.style.display = h.show ? '' : 'none';
+        });
     }
 
     // AIA
     const tableAIA = document.createElement('table'); tableAIA.className='sx-table'; tableAIA.style.display='none';
     const theadA = document.createElement('thead'); const trhA = document.createElement('tr');
-    headersAIA.forEach(h=>{ const th=document.createElement('th'); th.textContent=h.label; trhA.appendChild(th); });
+    const thByKeyA = new Map();
+    headersAIA.forEach(h=>{ const th=document.createElement('th'); th.dataset.key=h.key; th.textContent=h.label; if (h.key==='Fav') th.classList.add('sx-favcell'); trhA.appendChild(th); thByKeyA.set(h.key, th); });
     theadA.appendChild(trhA);
     const tbodyA = document.createElement('tbody');
     tableAIA.append(theadA, tbodyA);
 
     function applyHeaderVisibilityAIA(){
-        Array.from(trhA.children).forEach((th,i)=>{ th.style.display = headersAIA[i].show ? '' : 'none'; });
+        headersAIA.forEach(h=>{
+            const th = thByKeyA.get(h.key);
+            if (!th) return;
+            th.textContent = h.label || '';
+            th.style.display = h.show ? '' : 'none';
+        });
     }
 
-    // ---------- Tooltip (⚠ scope dans la fenêtre pour le CSS + z-index) ----------
+    // Tooltip
     const tipEl = document.createElement('div');
     tipEl.className = 'sx-tip';
     tipEl.innerHTML = `<h4>Détails</h4><div class="sx-tip-list"></div>`;
@@ -446,7 +522,6 @@
         tipEl.style.left = `${left}px`; tipEl.style.top  = `${top}px`;
     }
     function hideTip(){ tipEl.style.display = 'none'; }
-
     function tipAttachFor(el){
         el.addEventListener('mousemove', (e)=>{
             const td = e.target.closest('td.sx-has-tip');
@@ -461,19 +536,7 @@
     tipAttachFor(tableAIA);
     window.addEventListener('scroll', hideTip, true);
 
-    // ---------- Rendu SECTEURS ----------
-    function withUnit(key, v){
-        const s = abbr(v);
-        if (!s) return '';
-        if (key === 'ProdM' || key === 'ProdT') return `${s}/h`;
-        if ([
-            'ProdP','EntretienM','EntretienT','RentaM','RentaT',
-            'EntM1M','EntM1T','EntM4M','EntM4T',
-            'EntM1MM','EntM1MT','EntM1MHM','EntM1MHT','EntM1TM','EntM1TT','EntM1THM','EntM1THT'
-        ].includes(key)) return `${s}/j`;
-        return s;
-    }
-
+    // ---- render SECTEURS
     function renderSectors(){
         applyHeaderVisibility();
         tbodyEl.innerHTML='';
@@ -491,6 +554,8 @@
             headers.forEach(h=>{
                 if(!h.show) return;
                 const td=document.createElement('td');
+                if (h.key==='Fav') td.classList.add('sx-favcell');
+
                 switch(h.key){
                     case 'IMG': {
                         const wrap = document.createElement('div'); wrap.className='sx-imgwrap';
@@ -519,10 +584,10 @@
                         const val = getFilonLS(r.ID);
                         if (val !== null && Number.isFinite(val)) {
                             const v = Math.round(val * 100) / 100;
-                            const cls = (val >= 0.90) ? 'ok' : (val >= 0.80 ? 'warn' : 'bad');
-                            td.innerHTML = `<span class="sx-filon ${cls}">${v.toFixed(2)}</span>`;
+                            const cls = (val >= 0.90) ? 'sx-green' : (val >= 0.80 ? '' : 'sx-red');
+                            td.innerHTML = `<span class="${cls}">${v.toFixed(2)}</span>`;
                         } else {
-                            td.innerHTML = `N/A <button class="sx-btn sx-filon-refresh" style="padding:2px 6px" data-id="${r.ID}" title="Récupérer depuis la planète courante">🔄</button>`;
+                            td.innerHTML = `N/A <button class="sx-mini-btn sx-filon-refresh" data-id="${r.ID}" title="Récupérer depuis la planète courante">🔄</button>`;
                         }
                         break;
                     }
@@ -547,7 +612,7 @@
                         if (r.M1MH) html += `<div>Col. Minière: <b>${abbr(r.M1MH)}</b></div>`;
                         if (r.M1T)  html += `<div>Extr. Jovien: <b>${abbr(r.M1T)}</b></div>`;
                         if (r.M1TH) html += `<div>Raf. Mobile: <b>${abbr(r.M1TH)}</b></div>`;
-                        td.innerHTML = html || '—';
+                        td.innerHTML = html;
                         break;
                     }
                     case 'Flotte': {
@@ -576,7 +641,6 @@
                         break;
                     }
 
-                    // simples (cachés)
                     case 'ProdM': td.textContent = withUnit('ProdM', r.ProdM); break;
                     case 'ProdT': td.textContent = withUnit('ProdT', r.ProdT); break;
                     case 'ProdP': td.textContent = withUnit('ProdP', r.ProdP); break;
@@ -589,10 +653,7 @@
                     case 'M1MH':  td.textContent = abbr(r.M1MH); break;
                     case 'M1T':   td.textContent = abbr(r.M1T); break;
                     case 'M1TH':  td.textContent = abbr(r.M1TH); break;
-                    case 'M1_ind':td.textContent = abbr(r.M1); break;
-                    case 'M4_ind':td.textContent = abbr(r.M4); break;
 
-                    // entretiens détaillés (cachés)
                     case 'EntM1M':  td.textContent = withUnit('EntM1M',  r.EntM1M); break;
                     case 'EntM1T':  td.textContent = withUnit('EntM1T',  r.EntM1T); break;
                     case 'EntM4M':  td.textContent = withUnit('EntM4M',  r.EntM4M); break;
@@ -607,20 +668,35 @@
                     case 'EntM1THT':td.textContent = withUnit('EntM1THT',r.EntM1THT); break;
 
                     case 'Action': {
-                        const sid = (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : '';
+                        const S = sid();
                         td.className='sx-actions';
                         td.innerHTML = `
-              <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${sid}&IDCible=${r.ID}">
+              <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${S}&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoFlotte.png" alt="">
               </a>
-              <a target="Programme" title="Récolter" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=recolter&IDCible=${r.ID}">
+              <a target="Programme" title="Récolter" href="../Programme/UniversOrdres.php?S_id=${S}&Ordre=recolter&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoRecolter.png" alt="">
               </a>
-              <a target="Programme" title="Ordinateur" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=ordinateur&IDCible=${r.ID}">
+              <a target="Programme" title="Ordinateur" href="../Programme/UniversOrdres.php?S_id=${S}&Ordre=ordinateur&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoOrdinateur.png" alt="">
               </a>`;
                         break;
                     }
+
+                    case 'Fav': {
+                        const wrap = document.createElement('div'); wrap.className='sx-favcheck';
+                        const cb = document.createElement('input'); cb.type='checkbox';
+                        cb.checked = isFav('sector', r.ID);
+                        cb.title = cb.checked ? 'Retirer des favoris' : 'Ajouter aux favoris';
+                        cb.onchange = () => {
+                            if (cb.checked) addFav({ kind:'sector', id:r.ID, rowKey:r.RowKey, adresse:r.Adresse, img:r.IMG });
+                            else removeFav('sector', r.ID);
+                        };
+                        wrap.appendChild(cb);
+                        td.appendChild(wrap);
+                        break;
+                    }
+
                     default: td.textContent = '';
                 }
                 tr.appendChild(td);
@@ -629,7 +705,7 @@
         });
     }
 
-    // ---------- AIA helpers + rendu ----------
+    // ---- AIA helpers ----
     function computeAIA(level){
         const lvl = Math.max(0, Number(level)||0);
         const entM = 240_000_000 * Math.sqrt(lvl) * (10 / (Math.pow(lvl,0.75) + 10) + 0.25);
@@ -646,7 +722,6 @@
             const tr = document.createElement('tr');
             const cap = computeAIA(r.AIA||0);
 
-            // Entr. Base (toute flotte)
             const baseM = r.BaseM||0, baseT = r.BaseT||0;
             const maxDeductM = 0.9 * baseM;
             const maxDeductT = 0.9 * baseT;
@@ -656,13 +731,13 @@
             const restT = Math.max(0, baseT - deductT);
             const freeM = Math.max(0, cap.entM - deductM);
             const freeT = Math.max(0, cap.entT - deductT);
-
-            // Charge (métal uniquement)
             const load = cap.entM > 0 ? (baseM / cap.entM) : 0;
 
             headersAIA.forEach(h=>{
                 if(!h.show) return;
                 const td = document.createElement('td');
+                if (h.key==='Fav') td.classList.add('sx-favcell');
+
                 switch(h.key){
                     case 'IMG': {
                         const wrap = document.createElement('div'); wrap.className='sx-imgwrap';
@@ -732,18 +807,31 @@
                         td.innerHTML = `<span class="${load>1?'sx-red':'sx-green'}">${pct(load)}</span>`;
                         break;
                     case 'Action': {
-                        const sid = (window.Joueur && window.Joueur.Session) ? window.Joueur.Session : '';
+                        const S = sid();
                         td.className='sx-actions';
                         td.innerHTML = `
-              <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${sid}&IDCible=${r.ID}">
+              <a target="Programme" title="Flottes" href="../Programme/Flottes.php?S_id=${S}&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoFlotte.png" alt="">
               </a>
-              <a target="Programme" title="Récolter" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=recolter&IDCible=${r.ID}">
+              <a target="Programme" title="Récolter" href="../Programme/UniversOrdres.php?S_id=${S}&Ordre=recolter&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoRecolter.png" alt="">
               </a>
-              <a target="Programme" title="Ordinateur" href="../Programme/UniversOrdres.php?S_id=${sid}&Ordre=ordinateur&IDCible=${r.ID}">
+              <a target="Programme" title="Ordinateur" href="../Programme/UniversOrdres.php?S_id=${S}&Ordre=ordinateur&IDCible=${r.ID}">
                 <img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoOrdinateur.png" alt="">
               </a>`;
+                        break;
+                    }
+                    case 'Fav': {
+                        const wrap = document.createElement('div'); wrap.className='sx-favcheck';
+                        const cb = document.createElement('input'); cb.type='checkbox';
+                        cb.checked = isFav('sector', r.ID);
+                        cb.title = cb.checked ? 'Retirer des favoris' : 'Ajouter aux favoris';
+                        cb.onchange = () => {
+                            if (cb.checked) addFav({ kind:'sector', id:r.ID, rowKey:r.RowKey, adresse:r.Adresse, img:r.IMG });
+                            else removeFav('sector', r.ID);
+                        };
+                        wrap.appendChild(cb);
+                        td.appendChild(wrap);
                         break;
                     }
                     default: td.textContent = '';
@@ -754,7 +842,7 @@
         });
     }
 
-    // ---------- Export ----------
+    // ---- Export CSV (toutes colonnes visibles + Fav)
     function exportCSV(){
         const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
         const headerLabels = headers.map(h=>h.label || '');
@@ -790,8 +878,7 @@
                     try { const ts = localStorage.getItem(harvestKey(r.ID)); label = ts ? timeAgoLabel(ts) : 'N/A'; } catch {}
                     return label;
                 }
-                case 'M1_ind': return r.M1;
-                case 'M4_ind': return r.M4;
+                case 'Fav': return isFav('sector', r.ID) ? '1' : '0';
                 default: return r[key];
             }
         };
@@ -804,6 +891,7 @@
         a.download='secteurs.csv'; a.click(); URL.revokeObjectURL(a.href);
     }
 
+    // ---- Export JSON brut de window.Secteurs
     function exportJSON(){
         try{
             const src = window.Secteurs ?? {};
@@ -834,15 +922,43 @@
         }
     }
 
-    // ---------- Events ----------
-    btnRefresh.onclick = () => { rebuildShipDefs(); buildRowsFromWindow(); updateWidgets(); renderSectors(); renderAIA(); };
+    // ---- mount
+    const frag = document.createDocumentFragment();
+    frag.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
+    ui.body.append(frag);
+
+    // ---- events
+    function activateTab(which){
+        activeTab = which === 'AIA' ? 'AIA' : 'Secteurs';
+        if (activeTab === 'AIA'){
+            tabSectors.classList.remove('active'); tabAIA.classList.add('active');
+            tableEl.style.display='none'; tableAIA.style.display='';
+            hideTip();
+        } else {
+            tabAIA.classList.remove('active'); tabSectors.classList.add('active');
+            tableAIA.style.display='none'; tableEl.style.display='';
+            hideTip();
+        }
+    }
+    tabSectors.onclick = () => activateTab('Secteurs');
+    tabAIA.onclick     = () => activateTab('AIA');
+
+    btnRefresh.onclick = () => {
+        rebuildShipDefs();
+        buildRowsFromWindow();
+        updateWidgets();
+        renderSectors();
+        renderAIA();
+    };
     btnCsv.onclick = exportCSV;
-    btnCols.onclick = ()=>{ if(colMenuEl.style.display==='flex') hideColMenu(); else buildColMenu(); };
+    btnCols.onclick = ()=>{ (colMenuEl.style.display==='flex') ? hideColMenu() : buildColMenu(); };
     btnDbg.onclick  = exportJSON;
 
-    searchEl.oninput = renderSectors;
-    fM.onchange = renderSectors; fT.onchange = renderSectors;
+    searchEl.oninput = () => (activeTab==='AIA'?renderAIA():renderSectors());
+    fM.onchange = () => renderSectors();
+    fT.onchange = () => renderSectors();
 
+    // Interception clics
     document.addEventListener('click',(ev)=>{
         // Fermer menu colonnes si clic ailleurs
         if (colMenuEl.style.display==='flex' && !colMenuEl.contains(ev.target) && ev.target!==btnCols) hideColMenu();
@@ -856,14 +972,20 @@
             const pid = String(p.ID || '');
             const fil = toNum(p.Filon);
             if (!id) return;
-            if (pid !== String(id)) { alert("Ouvre d'abord la planète correspondante, puis reclique sur 🔄."); return; }
-            if (fil == null) { alert("Filon introuvable sur la planète courante."); return; }
+            if (pid !== String(id)) {
+                alert("Ouvre d'abord la planète correspondante, puis reclique sur 🔄.");
+                return;
+            }
+            if (fil === null) {
+                alert("Filon introuvable sur la planète courante.");
+                return;
+            }
             setFilonLS(id, fil);
             renderSectors();
             return;
         }
 
-        // Récolter : stamp + suivi du lien
+        // Récolter : enregistre timestamp et suit le lien
         const a = ev.target.closest('a[title="Récolter"], a[href*="Ordre=recolter"]');
         if (a && a.closest('.sx-actions')) {
             ev.preventDefault();
@@ -879,22 +1001,18 @@
         }
     }, true);
 
-    // ---------- Mount ----------
-    ui.body.append(tabsEl, widgetsEl, controlsEl, tableEl, tableAIA);
+    window.addEventListener('ct:fav:changed', ()=> (activeTab==='AIA'?renderAIA():renderSectors()));
 
-    // ---------- Initial ----------
+    // ---------- Initial
     rebuildShipDefs();
     buildRowsFromWindow();
     updateWidgets();
     renderSectors();
     renderAIA();
+    ui.bringToFront?.();
 
-    // ---------- API ----------
+    // API
     window.__secteursInspector = {
-        open(){
-            ui.setSize(1280, 650);
-            ui.bringToFront?.();
-            updateWidgets(); renderSectors(); renderAIA();
-        }
+        open(){ ui.bringToFront?.(); (activeTab==='AIA'?renderAIA():renderSectors()); }
     };
 })();

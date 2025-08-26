@@ -44,9 +44,13 @@ async function injectInjector(){
     try{ const r = await injectFiles(["ct_core.js","injector_3000.js"]); setStatus(`Injecté: core + injector (frame ${r.frameId})`,"ok"); }
     catch(e){ console.error(e); setStatus(`Erreur Injector: ${e?.message||e}`,"err"); }
 }
+async function injectFavories(){
+    try{ const r = await injectFiles(["ct_core.js","favories.js"]); setStatus(`Injecté: core + favories (frame ${r.frameId})`,"ok"); }
+    catch(e){ console.error(e); setStatus(`Erreur Favories: ${e?.message||e}`,"err"); }
+}
 async function injectAll(){
     try{
-        const r = await injectFiles(["ct_core.js","secteurs_inspector.js","colonies_manager.js","resources_bar.js","injector_3000.js"]);
+        const r = await injectFiles(["ct_core.js","secteurs_inspector.js","colonies_manager.js","resources_bar.js","injector_3000.js","favories.js"]);
         setStatus(`Injecté: ${r.files.join(", ")} (frame ${r.frameId})`,"ok");
     }catch(e){ console.error(e); setStatus(`Erreur Tout: ${e?.message||e}`,"err"); }
 }
@@ -58,6 +62,7 @@ function wire(){
     qs("inject-colonies")?.addEventListener("click", injectColonies);
     qs("inject-resources")?.addEventListener("click", injectResources);
     qs("inject-injector")?.addEventListener("click", injectInjector);
+    qs("inject-favories")?.addEventListener("click", injectFavories);
     qs("inject-all")?.addEventListener("click", injectAll);
 }
 document.addEventListener("DOMContentLoaded", ()=>{ try{ wire(); setStatus("Prêt.","ok"); }catch(e){ console.error(e); setStatus(`Erreur init: ${e?.message||e}`,"err"); }});
