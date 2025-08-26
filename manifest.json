@@ -14,5 +14,8 @@
   "host_permissions": [
     "https://horizon.celestus.fr/*",
     "http://horizon.celestus.fr/*"
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }

@@ -1,4 +1,4 @@
-// injector_3000.js — Injector 3000 (compact + CSS selon consignes)
+// injector_3000.js — Injector 3000 (compact + CSS + API fill) — v1.2
 (() => {
     if (!window.CT || !CT.__ready) { console.error('CT core manquant. Injecte ct_core.js d’abord.'); return; }
 
@@ -14,35 +14,23 @@
     const ui = CT.win.create({
         id: 'ct-injector',
         title: 'Injector 3000',
-        size: [198, 221],     // <<< taille par défaut demandée
+        size: [198, 221],
         pos: [60, 120],
         scroll: 'hidden',
         className: 'ct-app-injector'
     });
     ui.onClose(() => { try { window.__injector3000 = undefined; } catch {} });
 
-    // ---------- CSS précis (tes règles) ----------
+    // ---------- CSS ----------
     const EXTRA_CSS = `
   .ct-app-injector .ct-row { gap: 8px; }
   .ct-app-injector .ct-igroup input { padding: 4px 9px; }
   .ct-igroup select {
-    border: 0;
-    border-left: 1px solid #223051;
-    background: transparent;
-    color: #eaeefc;
-    padding: 4px 4px;
-    outline: none;
-    width: 54px;
-    appearance: none;
-    text-align: center;
+    border: 0; border-left: 1px solid #223051; background: transparent; color: #eaeefc;
+    padding: 4px 4px; outline: none; width: 54px; appearance: none; text-align: center;
   }
   .ct-app-injector .ct-igroup select { width: 37px; }
-  .ct-btn {
-    border-radius: 999px;
-    border: 1px solid #2a4b7a;
-    padding: 2px 12px;
-    cursor: pointer;
-  }
+  .ct-btn { border-radius: 999px; border: 1px solid #2a4b7a; padding: 2px 12px; cursor: pointer; }
   .ct-app-injector .footer { justify-content: flex-end; padding-top: 0px; }
   `;
     const st = document.createElement('style'); st.textContent = EXTRA_CSS; document.head.appendChild(st);
@@ -71,7 +59,7 @@
 
     ui.body.append(rM.row, rT.row, rP.row, rH.row, footer);
 
-    // ---------- Logic ----------
+    // ---------- Helpers ----------
     function setField(sel, v){
         const el = document.querySelector(sel); if(!el) return false;
         el.value = String(v);
@@ -79,6 +67,8 @@
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
     }
+
+    // ---------- Logic ----------
     function inject(){
         const plan = [
             { s:'#FResM', v: Math.floor(CT.num.to(rM.inp.value) * CT.units.factor(rM.sel.value)) },
@@ -93,8 +83,35 @@
     btn.onclick = inject;
     [rM.inp, rT.inp, rP.inp, rH.inp].forEach(i => i.addEventListener('keydown', e => { if(e.key==='Enter') inject(); }));
 
-    // API
+    // ---------- API publique + écouteur d’évènement ----------
+    function fill(values = {}){
+        const M = Math.max(0, Number(values.M) || 0);
+        const T = Math.max(0, Number(values.T) || 0);
+        const P = Math.max(0, Number(values.P) || 0);
+        const H = Math.max(0, Number(values.H) || 0);
+
+        rM.sel.value = 'u'; rM.inp.value = String(M);
+        rT.sel.value = 'u'; rT.inp.value = String(T);
+        rP.sel.value = 'u'; rP.inp.value = String(P);
+        rH.sel.value = 'u'; rH.inp.value = String(H);
+
+        // notifie les listeners éventuels
+        [rM.inp, rT.inp, rP.inp, rH.inp].forEach(inp => {
+            inp.dispatchEvent(new Event('input', { bubbles:true }));
+            inp.dispatchEvent(new Event('change', { bubbles:true }));
+        });
+    }
+
+    window.addEventListener('CT:InjectorFill', (e) => {
+        try {
+            const vals = (e && e.detail) || {};
+            ui.bringToFront?.();
+            fill(vals);
+        } catch {}
+    });
+
     window.__injector3000 = {
-        open(){ ui.setSize(198, 221); ui.bringToFront?.(); }
+        open(){ ui.setSize(198, 221); ui.bringToFront?.(); },
+        fill,   // <-- nouvelle API
     };
 })();
