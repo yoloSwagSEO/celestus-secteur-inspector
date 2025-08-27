@@ -460,7 +460,7 @@
                         const wrap = document.createElement('div'); wrap.className='cx-imgwrap';
                         const aRac = document.createElement('a');
                         aRac.className = 'cx-rac';
-                        aRac.href = `javascript:try{RemplirChampsPlanete('racourcis_secteurs','${String(r.RowKey).replace(/'/g,"\\'")}')}catch(e){console.error('Raccourci colonies : erreur ignorée',e)}`;
+                        aRac.href = `javascript:RemplirChampsPlanete('racourcis_colonies','${String(r.RowKey).replace(/'/g,"\\'")}')`;
                         aRac.title = 'Cibler la planète';
                         wrap.appendChild(aRac);
                         if (r.IMG) {
