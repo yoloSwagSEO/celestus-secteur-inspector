@@ -124,14 +124,17 @@
         const S = sid();
         const aF = document.createElement('a'); aF.title='Flottes';
         aF.href = `../Programme/Flottes.php?S_id=${S}&IDCible=${encodeURIComponent(item.id||'')}`;
+        aF.target = 'Programme';
         aF.innerHTML = `<img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoFlotte.png" alt="">`;
 
         const aR = document.createElement('a'); aR.title='Récolter';
         aR.href = `../Programme/UniversOrdres.php?S_id=${S}&Ordre=recolter&IDCible=${encodeURIComponent(item.id||'')}`;
+        aR.target = 'Programme';
         aR.innerHTML = `<img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoRecolter.png" alt="">`;
 
         const aO = document.createElement('a'); aO.title='Ordinateur';
         aO.href = `../Programme/UniversOrdres.php?S_id=${S}&Ordre=ordinateur&IDCible=${encodeURIComponent(item.id||'')}`;
+        aO.target = 'Programme';
         aO.innerHTML = `<img src="https://horizon.celestus.fr/CelestusV2/Interface/Skin/Icones/UIcoOrdinateur.png" alt="">`;
 
         const aX = document.createElement('a'); aX.title='Retirer des Favories';
