@@ -1,4 +1,6 @@
 // colonies_manager.js — CT.win + colonne Fav (checkbox à droite) + menu colonnes FIX (affichage/toggle + z-index)
+// .cx-pm = manque d'énergie (ResET < ResEU) ; .cx-pop = manque de population (ResHU > ResHT)
+// Colonne "Population" (used/dispo) à gauche de "Production", valeur rouge si dépassement, affichage abrégé via abbr()
 (() => {
     // --- anti-double-injection
     if (window.__coloniesManager && typeof window.__coloniesManager.open === 'function') {
@@ -190,6 +192,12 @@
             const ResT  = toNum(c.ResT);
             const ResP  = toNum(c.ResP);
 
+            // Statuts énergie / population
+            const ResET = toNum(c.ResET) || 0; // énergie totale
+            const ResEU = toNum(c.ResEU) || 0; // énergie utilisée
+            const ResHT = toNum(c.ResHT) || 0; // population dispo
+            const ResHU = toNum(c.ResHU) || 0; // population utilisée
+
             const TC = toNum(c.TC);
 
             const ConstBat  = c.ConstBat ? String(c.ConstBat) : '';
@@ -213,6 +221,7 @@
                 PlaceU, PlaceT: PlaceTAdj, PlaceTBase, BatMC, perMeta,
                 ProdM, ProdT, ProdP,
                 ResM, ResT, ResP,
+                ResET, ResEU, ResHT, ResHU,
                 TC,
                 ConstBat, buildName, buildLevel, endTs,
                 FleetTotal: fleet.total,
@@ -264,11 +273,11 @@
   .ct-app-colonies .cx-actions a:hover{background:#202a52}
   .ct-app-colonies .cx-actions img{width:18px;height:18px}
 
-  /* MENU COLONNES - ATTACHÉ À LA FENÊTRE (z-index garanti) */
+  /* MENU COLONNES */
   .ct-app-colonies .cx-colmenu{
-    position:fixed; /* viewport */
+    position:fixed;
     background:#151c2f;border:1px solid #3a4a7a;border-radius:10px;
-    padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647; /* top */
+    padding:10px;display:none;flex-direction:column;gap:6px;z-index:2147483647;
     box-shadow:0 12px 30px rgba(0,0,0,.5);
     max-height:70vh; overflow-y:auto;
   }
@@ -280,9 +289,17 @@
 
   .ct-app-colonies .cx-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:12px;line-height:18px;border:1px solid transparent}
   .ct-app-colonies .cx-chip-pm{background:rgba(98,176,255,.12);border-color:rgba(98,176,255,.4);color:#a9d6ff}
+
+  /* .cx-pm = manque d'énergie */
   .ct-app-colonies .cx-pm{
     background:linear-gradient(90deg, rgba(98,176,255,.10) 0%, rgba(98,176,255,.04) 40%, rgba(0,0,0,0) 100%);
     box-shadow: inset 3px 0 0 rgba(62,164,255,.95);
+  }
+
+  /* .cx-pop = manque de population */
+  .ct-app-colonies .cx-pop{
+    background: linear-gradient(90deg, rgb(255 98 98 / 10%) 0%, rgba(98, 176, 255, .04) 40%, rgba(0, 0, 0, 0) 100%);
+    box-shadow: inset 3px 0 0 rgb(255 62 62 / 95%);
   }
 
   /* Fav checkbox compact (colonne à droite) */
@@ -341,6 +358,7 @@
         {labelHTML:`<img src="${icon.TC}" alt="TC" title="Technocité" width="16" height="16">`,
             key:'TC', show:true, menuLabel:'Technocité', csvLabel:'TC'},
         {label:'Cases', key:'Cases', show:true, menuLabel:'Cases', csvLabel:'Cases'},
+        {label:'Population', key:'Pop', show:true, menuLabel:'Population', csvLabel:'Population'},
         {label:'Production', key:'ProdGroup', show:true, menuLabel:'Production', csvLabel:'Production'},
         {label:'Stock', key:'StockGroup', show:true, menuLabel:'Stock', csvLabel:'Stock'},
         {label:'Flotte', key:'Flotte', show:true, menuLabel:'Flotte', csvLabel:'Flotte'},
@@ -395,20 +413,16 @@
     }
 
     // ===== MENU COLONNES (FIX) =====
-    // IMPORTANT: on attache le menu DANS la fenêtre CT (ui.root) pour hériter du style et garantir la pile z-index
     const colMenuEl = document.createElement('div');
     colMenuEl.className='cx-colmenu';
-    // fallback inline au cas où la feuille CSS ne charge pas
     colMenuEl.style.position = 'fixed';
     colMenuEl.style.display = 'none';
     colMenuEl.style.zIndex = '2147483647';
     ui.root.appendChild(colMenuEl);
 
     function buildColMenu(){
-        // maj des labels de bâtiments si la langue/defs changent
         headers.forEach(h=>{ if (BUILDING_CODES.includes(h.key)) h.label = buildLabel(h.key); });
 
-        // contenu
         colMenuEl.innerHTML = '';
         headers.forEach((h)=>{
             const lbl=document.createElement('label');
@@ -419,12 +433,10 @@
             colMenuEl.appendChild(lbl);
         });
 
-        // positionnement près du bouton
         const r = btnCols.getBoundingClientRect();
         let top = r.bottom + 8;
         let left = r.left;
         colMenuEl.style.display = 'flex';
-        // dimension après rendu
         const mr = colMenuEl.getBoundingClientRect();
         if (left + mr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - mr.width - 8);
         if (top + mr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mr.height - 8);
@@ -434,8 +446,6 @@
     const hideColMenu = () => { colMenuEl.style.display='none'; };
 
     // ---------- Rendu ----------
-    function applyHeaderVisibilityAndRender(){ applyHeaderVisibility(); render(); }
-
     function render(){
         applyHeaderVisibility();
         tbodyEl.innerHTML='';
@@ -448,7 +458,10 @@
 
         filtered.forEach(r=>{
             const tr = document.createElement('tr');
-            if ((r.Type||'').toUpperCase() === 'PM') tr.classList.add('cx-pm');
+
+            // Highlights
+            if ((r.ResET || 0) < (r.ResEU || 0)) tr.classList.add('cx-pm');   // manque d'énergie
+            if ((r.ResHT || 0) < (r.ResHU || 0)) tr.classList.add('cx-pop');  // manque de population
 
             headers.forEach(h=>{
                 if (!h.show) return;
@@ -519,6 +532,13 @@
                         if (p > 95) td.classList.add('cx-red');
                         break;
                     }
+                    case 'Pop': {
+                        const used = r.ResHU || 0;
+                        const total = r.ResHT || 0;
+                        td.textContent = `${abbr(used)}/${abbr(total)}`;
+                        if (used > total) td.classList.add('cx-red');
+                        break;
+                    }
                     case 'ProdGroup':
                         td.innerHTML = `
               <div><img src="${icon.M}" width="14"> ${r.ProdM!=null?abbr(r.ProdM)+'/h':''}</div>
@@ -532,8 +552,8 @@
               <div><img src="${icon.P}" width="14"> ${abbr(r.ResP)}</div>`;
                         break;
                     case 'Flotte': {
-                        const total = r.FleetTotal || 0;
-                        td.textContent = abbr(total);
+                        const totalF = r.FleetTotal || 0;
+                        td.textContent = abbr(totalF);
                         td.dataset.tipHtml = (r.FleetBreakdown && r.FleetBreakdown.length)
                             ? r.FleetBreakdown.map(it => `<div style="display:flex;justify-content:space-between;gap:12px;"><span>${it.name}</span><span>${it.qty}</span></div>`).join('')
                             : `<div style="display:flex;justify-content:space-between;gap:12px;"><span>Aucun vaisseau</span><span>0</span></div>`;
@@ -604,6 +624,11 @@
                     const u = r.PlaceU||0, t = r.PlaceT||1;
                     const pct = t>0 ? Math.round((u/t)*100) : 0;
                     return `${u}/${t} (${pct}%)`;
+                }
+                case 'Pop': {
+                    const used = r.ResHU || 0;
+                    const total = r.ResHT || 0;
+                    return `${used}/${total}`;
                 }
                 case 'ProdGroup': return `M:${r.ProdM||0}/h | T:${r.ProdT||0}/h | P:${r.ProdP||0}/j`;
                 case 'StockGroup': return `M:${r.ResM||0} | T:${r.ResT||0} | P:${r.ResP||0}`;
