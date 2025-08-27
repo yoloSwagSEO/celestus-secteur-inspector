@@ -94,7 +94,13 @@
         const c1 = document.createElement('div'); c1.className='fv-c1';
         const aRac = document.createElement('a'); aRac.className='fv-rac'; aRac.title='Cibler';
         const rk = String(item.rowKey||'').replace(/'/g,"\\'");
-        aRac.href = `javascript:try{RemplirChampsPlanete('racourcis_secteurs','${rk}')}catch(e){console.error('Raccourci : erreur ignorée',e)}`;
+        let type = "racourcis_secteurs";
+        if(item.kind === "colony"){
+            type = "racourcis_colonies";
+        }
+        aRac.href = `javascript:RemplirChampsPlanete('${type}','${rk}')`;
+
+
         c1.appendChild(aRac);
         if (item.img) {
             const im = document.createElement('img'); im.className='fv-thumb'; im.src = thumb(item.img);
