@@ -83,6 +83,13 @@ async function injectRacourcis(){
     }catch(e){ console.error(e); setStatus(`Erreur Raccourcis: ${e?.message||e}`,"err"); }
 }
 
+async function injectCarte(){
+    try{
+        const r = await injectFiles(["ct_core.js","carte_scanner.js"]);
+        setStatus(`Injecté: core + racourcis (frame ${r.frameId})`,"ok");
+    }catch(e){ console.error(e); setStatus(`Erreur Raccourcis: ${e?.message||e}`,"err"); }
+}
+
 async function injectAll(){
     try{
         const r = await injectFiles([
@@ -109,6 +116,7 @@ function wire(){
     qs("inject-injector")?.addEventListener("click", injectInjector);
     qs("inject-favories")?.addEventListener("click", injectFavories);
     qs("inject-racourcis")?.addEventListener("click", injectRacourcis);
+    qs("inject-carte")?.addEventListener("click", injectCarte);
     qs("inject-all")?.addEventListener("click", injectAll);
 }
 

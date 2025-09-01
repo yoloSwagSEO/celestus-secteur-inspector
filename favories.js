@@ -1,4 +1,4 @@
-// favories.js — Module "Favories" ultra-minimal (raccourcis rapides)
+// favories.js — Module "Favories" (image cliquable + raccourcis clavier)
 (() => {
     // --- anti-double-injection
     if (window.__favories && typeof window.__favories.open === 'function') {
@@ -40,7 +40,7 @@
     const ui = CT.win.create({
         id: 'ct-favories',
         title: 'Favories',
-        size: [332, 266],        // <<< taille par défaut demandée
+        size: [332, 266],
         pos: [100, 80],
         scroll: 'auto',
         className: 'ct-app-fav'
@@ -53,7 +53,6 @@
 
   .ct-app-fav .fv-list{display:flex;flex-direction:column;gap:4px}
 
-  /* grille adaptée à la petite largeur */
   .ct-app-fav .fv-row{
     display:grid;grid-template-columns:74px 1fr 128px;gap:6px;align-items:center;
     padding:6px;border:1px solid #1b2542;border-radius:10px;background:#121a31;
@@ -86,25 +85,45 @@
     const list = document.createElement('div'); list.className='fv-list';
     ui.body.append(controls, list);
 
+    // ---------- État pour la navigation clavier ----------
+    let lastFiltered = [];     // tableau des items affichés (ordre actuel)
+    let navIndex = -1;         // index courant pour Flèche gauche/droite (dans lastFiltered)
+
+    // Renvoie tous les anchors d’adresse actuellement rendus (même ordre que lastFiltered)
+    function getAddressAnchors() {
+        return Array.from(list.querySelectorAll('.fv-row a.fv-link'));
+    }
+
+    // Ouvre un anchor de façon fiable (cible Programme si définie)
+    function openAnchor(a) {
+        if (!a) return;
+        const href = a.getAttribute('href');
+        const target = a.getAttribute('target') || '_self';
+        try { window.open(href, target); } catch { a.click(); }
+    }
+
     // ---------- Render ----------
     function buildRow(item){
         const row = document.createElement('div'); row.className='fv-row';
 
-        // col 1: ciblage + image
+        // col 1: ciblage + image (image cliquable -> même href que l'adresse)
         const c1 = document.createElement('div'); c1.className='fv-c1';
         const aRac = document.createElement('a'); aRac.className='fv-rac'; aRac.title='Cibler';
         const rk = String(item.rowKey||'').replace(/'/g,"\\'");
-        let type = "racourcis_secteurs";
-        if(item.kind === "colony"){
-            type = "racourcis_colonies";
-        }
+        let type = (item.kind === "colony") ? "racourcis_colonies" : "racourcis_secteurs";
         aRac.href = `javascript:RemplirChampsPlanete('${type}','${rk}')`;
-
-
         c1.appendChild(aRac);
+
+        // Lien d’adresse (servira aussi pour l’image)
+        const addrHref = `../Programme/Planete.php?ID=${encodeURIComponent(item.id||'')}&Serv=1`;
+        const addrTarget = 'Programme';
+
         if (item.img) {
+            const imgLink = document.createElement('a');
+            imgLink.href = addrHref; imgLink.target = addrTarget; imgLink.className = 'fv-img-link';
             const im = document.createElement('img'); im.className='fv-thumb'; im.src = thumb(item.img);
-            c1.appendChild(im);
+            imgLink.appendChild(im);
+            c1.appendChild(imgLink);
         }
 
         // col 2: nom + adresse (colonie) | adresse seule (secteur)
@@ -114,14 +133,16 @@
             c2.appendChild(nm);
         }
         const link = document.createElement('a');
-        link.href = `../Programme/Planete.php?ID=${encodeURIComponent(item.id||'')}&Serv=1`;
-        link.target = 'Programme';
+        link.href = addrHref;
+        link.target = addrTarget;
         link.textContent = String(item.adresse||'');
+        link.className = 'fv-link'; // <- pour les raccourcis clavier
         c2.appendChild(link);
 
-        // col 3: actions (+ supprimer, même style)
+        // col 3: actions (+ supprimer)
         const c3 = document.createElement('div'); c3.className='fv-actions';
         const S = sid();
+
         const aF = document.createElement('a'); aF.title='Flottes';
         aF.href = `../Programme/Flottes.php?S_id=${S}&IDCible=${encodeURIComponent(item.id||'')}`;
         aF.target = 'Programme';
@@ -148,7 +169,7 @@
         return row;
     }
 
-    function render() {
+    function computeFiltered(){
         const q = (search.value||'').trim().toLowerCase();
         const items = getFavs();
 
@@ -160,27 +181,82 @@
             return an.localeCompare(bn);
         });
 
-        const filtered = (!q) ? items : items.filter(it=>{
+        return (!q) ? items : items.filter(it=>{
             const t = ((it.nom||'') + ' ' + (it.adresse||'')).toLowerCase();
             return t.includes(q);
         });
+    }
 
+    function render() {
+        lastFiltered = computeFiltered(); // <-- garde la liste affichée pour les raccourcis
         list.innerHTML = '';
-        if (!filtered.length) {
+        if (!lastFiltered.length) {
             const empty = document.createElement('div');
             empty.style.opacity = '.8';
             empty.style.textAlign = 'center';
             empty.style.padding = '8px';
             empty.textContent = 'Aucun favori.';
             list.appendChild(empty);
+            navIndex = -1;
             return;
         }
-        filtered.forEach(it => list.appendChild(buildRow(it)));
+        lastFiltered.forEach(it => list.appendChild(buildRow(it)));
+        // reset l’index nav quand la liste change
+        navIndex = (navIndex >= 0 && navIndex < lastFiltered.length) ? navIndex : 0;
+    }
+
+    // ---------- Raccourcis clavier ----------
+    function onKeyDown(e){
+        // Ignorer si on tape dans un champ de saisie (notamment la recherche)
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+        const isTyping = (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable);
+        if (isTyping) return;
+
+        if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+
+        // Shift + 1..9 -> ouvre favori N
+        if (/^[1-9]$/.test(e.key)) {
+            const n = Number(e.key);
+            const anchors = getAddressAnchors();
+            if (n >= 1 && n <= anchors.length) {
+                e.preventDefault();
+                e.stopPropagation();
+                navIndex = n - 1;
+                openAnchor(anchors[navIndex]);
+            }
+            return;
+        }
+
+        // Shift + Flèche droite = favori précédent (clic adresse)
+        if (e.key === 'ArrowRight') {
+            const anchors = getAddressAnchors();
+            if (!anchors.length) return;
+            e.preventDefault(); e.stopPropagation();
+            if (navIndex < 0) navIndex = 0;
+            else navIndex = (navIndex - 1 + anchors.length) % anchors.length;
+            openAnchor(anchors[navIndex]);
+            return;
+        }
+
+        // Shift + Flèche gauche = favori suivant (clic adresse)
+        if (e.key === 'ArrowLeft') {
+            const anchors = getAddressAnchors();
+            if (!anchors.length) return;
+            e.preventDefault(); e.stopPropagation();
+            if (navIndex < 0) navIndex = 0;
+            else navIndex = (navIndex + 1) % anchors.length;
+            openAnchor(anchors[navIndex]);
+            return;
+        }
     }
 
     // events
-    search.oninput = render;
+    search.oninput = () => { render(); };
     window.addEventListener('ct:fav:changed', render);
+    window.addEventListener('keydown', onKeyDown, true); // capture tôt
+
+    // nettoyage à la fermeture
+    ui.onClose(()=>{ window.removeEventListener('keydown', onKeyDown, true); });
 
     // première peinture
     render();
