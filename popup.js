@@ -86,8 +86,24 @@ async function injectRacourcis(){
 async function injectCarte(){
     try{
         const r = await injectFiles(["ct_core.js","carte_scanner.js"]);
-        setStatus(`Injecté: core + racourcis (frame ${r.frameId})`,"ok");
-    }catch(e){ console.error(e); setStatus(`Erreur Raccourcis: ${e?.message||e}`,"err"); }
+        setStatus(`Injecté: core + carte (frame ${r.frameId})`,"ok");
+    }catch(e){ console.error(e); setStatus(`Erreur Carte: ${e?.message||e}`,"err"); }
+}
+
+// 🚀 Presets — Builder
+async function injectFleetPresets(){
+    try{
+        const r = await injectFiles(["ct_core.js","fleet_preset_builder.js"]);
+        setStatus(`Injecté: core + presets flottes (builder) (frame ${r.frameId})`,"ok");
+    }catch(e){ console.error(e); setStatus(`Erreur Presets Flottes (builder): ${e?.message||e}`,"err"); }
+}
+
+// 🚀 Presets — Runner (liste & appliquer sur la page Flottes)
+async function injectFleetRunner(){
+    try{
+        const r = await injectFiles(["ct_core.js","fleet_preset_runner.js"]);
+        setStatus(`Injecté: core + runner presets (frame ${r.frameId})`,"ok");
+    }catch(e){ console.error(e); setStatus(`Erreur Runner Presets: ${e?.message||e}`,"err"); }
 }
 
 async function injectAll(){
@@ -99,7 +115,10 @@ async function injectAll(){
             "resources_bar.js",
             "injector_3000.js",
             "favories.js",
-            "racourcis.js"
+            "racourcis.js",
+            "carte_scanner.js",
+            "fleet_preset_builder.js",
+            "fleet_preset_runner.js"
         ]);
         setStatus(`Injecté: ${r.files.join(", ")} (frame ${r.frameId})`,"ok");
     }catch(e){ console.error(e); setStatus(`Erreur Tout: ${e?.message||e}`,"err"); }
@@ -117,6 +136,11 @@ function wire(){
     qs("inject-favories")?.addEventListener("click", injectFavories);
     qs("inject-racourcis")?.addEventListener("click", injectRacourcis);
     qs("inject-carte")?.addEventListener("click", injectCarte);
+
+    // Presets
+    qs("inject-fleet-presets")?.addEventListener("click", injectFleetPresets); // Builder
+    qs("inject-fleet-runner")?.addEventListener("click", injectFleetRunner);   // Runner
+
     qs("inject-all")?.addEventListener("click", injectAll);
 }
 
